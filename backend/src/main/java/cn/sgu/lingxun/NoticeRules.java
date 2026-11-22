@@ -53,7 +53,10 @@ final class NoticeRules {
             if (label.matches()) {
                 String type = TYPES.get(label.group(1));
                 slot = new Slot(context.role(), context.stage(), type);
-                value = label.group(2).strip();
+                value = label.group(2).strip().replaceFirst("[。；;]$", "");
+                if (CONDITION_TYPES.contains(type) && uncertainValue(value)) {
+                    reviewReason = "原文没有给出明确的" + type + "，需人工核定";
+                }
             } else if (stage != null || line.matches("^(截止|时间)[：:].*")) {
                 slot = context;
                 var parsed = NoticeDates.extract(line, version.noticeDate(), "截止".equals(slot.type()));
@@ -86,6 +89,12 @@ final class NoticeRules {
 
     static boolean isTentative(String line) {
         return line.contains("暂定") || line.contains("待定");
+    }
+
+    private static boolean uncertainValue(String value) {
+        return value.contains("另行通知") || value.contains("另行公布") || value.contains("另行告知")
+                || value.contains("待定") || value.contains("暂定") || value.contains("尚未确定")
+                || value.contains("以后续") || value.contains("详见");
     }
 
     private static Slot studentSlot(String category) {

@@ -133,6 +133,17 @@ class NoticeWorkflowTest {
         var correction = correction("2027-01-05T09:30", 1, statement, "1月5日09:30");
         Version corrected = correct(reviewer, update, correction);
         assertThat(corrected.field(DEADLINE.key()).change()).isEqualTo("覆盖");
+        ChangeSummary impact = decode(send(reviewer, GET,
+                "/api/maintenance/versions/" + update.id() + "/change-impact", null), ChangeSummary.class);
+        assertThat(impact.affectedRoles()).contains("学生");
+        assertThat(impact.affectedFields()).isEqualTo(1);
+        assertThat(impact.fields()).anySatisfy(field -> {
+            assertThat(field.fieldKey()).isEqualTo(DEADLINE.key());
+            assertThat(field.treatment()).isEqualTo("覆盖");
+            assertThat(field.previousValue()).isEqualTo("2026-11-21");
+            assertThat(field.currentValue()).isEqualTo(correction.value());
+            assertThat(field.taskAffected()).isTrue();
+        });
         var audit = decode(send(reviewer, GET, "/api/maintenance/audit", null), Event[].class);
         assertThat(audit).anySatisfy(event -> {
             assertThat(event.versionId()).isEqualTo(update.id());
@@ -146,6 +157,7 @@ class NoticeWorkflowTest {
         assertThat(entries).hasSize(1);
         TodoView held = entries[0];
         assertThat(held.state()).isEqualTo("REVIEW");
+        assertThat(held.dueAt()).isNull();
         assertThat(held.previous().choice().value()).isEqualTo("2026-11-21");
         assertThat(held.current().choice().value()).isEqualTo(correction.value());
         assertThat(calendar(student)).doesNotContain("20261121", "20270105");
@@ -154,6 +166,7 @@ class NoticeWorkflowTest {
 
         changeTodo(student, held.id(), update.id(), "confirm").andExpect(status().isOk());
         assertThat(todos(student, draft.matterId())[0].state()).isEqualTo("PENDING");
+        assertThat(todos(student, draft.matterId())[0].dueAt()).isEqualTo("2027-01-05T09:30");
         assertThat(calendar(student)).contains("DTSTART:20270105T013000Z").doesNotContain("20261121");
 
         Version unresolved = archive(reviewer, draft.matterId(), null, "2027-01-04", "报名截止1月5日或1月6日。");

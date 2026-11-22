@@ -19,4 +19,16 @@ server:
         name: LINGXUN_SESSION
         http-only: true
         same-site: lax
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 10MB
+
+lingxun:
+  llm:
+    enabled: ${LINGXUN_LLM_ENABLED:false}
+    base-url: ${LINGXUN_LLM_BASE_URL:https://api.deepseek.com}
+    api-key: ${LINGXUN_LLM_API_KEY:}
+    model: ${LINGXUN_LLM_MODEL:deepseek-chat}
+    timeout-seconds: ${LINGXUN_LLM_TIMEOUT_SECONDS:20}
+    max-input-chars: ${LINGXUN_LLM_MAX_INPUT_CHARS:12000}
 

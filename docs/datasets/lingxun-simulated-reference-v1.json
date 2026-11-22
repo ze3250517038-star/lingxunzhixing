@@ -1,0 +1,160 @@
+{
+  "datasetId": "lingxun-simulated-reference-v1",
+  "provenance": "SIMULATED_REFERENCE",
+  "language": "zh-CN",
+  "disclaimer": "本数据集由项目组按常见校园通知格式人工编写的模拟样本，仅用于开发期回归与评测工具联调；不是韶关学院或任何真实单位的通知，不得作为真实校方事实、真实实验结论或生产标注依据。",
+  "annotation": {
+    "method": "人工编写样本并人工填写期望字段；字段键为 role/stage/type",
+    "fields": ["适用对象", "材料", "入口", "截止", "时间"],
+    "notes": "tentative 表示原文标注暂定/待定；uncertain 表示不能自动确认，期望值为空；conflict 表示同字段出现互斥候选。"
+  },
+  "samples": [
+    {
+      "id": "SIM-001",
+      "title": "【模拟参考】2026年大学生创新方法竞赛报名通知",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-01",
+      "sourceUrl": "https://example.edu/simulated/notice-001",
+      "snapshot": "适用对象：全日制在校本科生（含专升本）。\n报名时间：2026年11月3日09:00至2026年11月10日17:30。\n材料要求：报名表、学生证复印件。\n办理入口：学校竞赛管理系统 https://example.edu/contest",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/截止", "value": "2026-11-10T17:30", "quote": "报名时间：2026年11月3日09:00至2026年11月10日17:30。"},
+        {"key": "学生/竞赛报名/适用对象", "value": "全日制在校本科生（含专升本）", "quote": "适用对象：全日制在校本科生（含专升本）。"},
+        {"key": "学生/竞赛报名/材料", "value": "报名表、学生证复印件", "quote": "材料要求：报名表、学生证复印件。"},
+        {"key": "学生/竞赛报名/入口", "value": "学校竞赛管理系统 https://example.edu/contest", "quote": "办理入口：学校竞赛管理系统 https://example.edu/contest"}
+      ],
+      "expectedUncertain": []
+    },
+    {
+      "id": "SIM-002",
+      "title": "【模拟参考】2026年秋季学期学分认定申报通知",
+      "category": "学分认定",
+      "noticeDate": "2026-11-10",
+      "sourceUrl": "https://example.edu/simulated/notice-002",
+      "snapshot": "学生申报时间：2026年11月15日09:00至2026年11月20日17:00（逾期不再受理）。\n适用对象：2024级、2025级本科生。\n材料要求：学分认定申请表、成绩单原件。\n办理入口：教务系统“学分认定”模块。",
+      "expectedFields": [
+        {"key": "学生/学分申报/截止", "value": "2026-11-20T17:00", "quote": "学生申报时间：2026年11月15日09:00至2026年11月20日17:00（逾期不再受理）。"},
+        {"key": "学生/学分申报/适用对象", "value": "2024级、2025级本科生", "quote": "适用对象：2024级、2025级本科生。"},
+        {"key": "学生/学分申报/材料", "value": "学分认定申请表、成绩单原件", "quote": "材料要求：学分认定申请表、成绩单原件。"},
+        {"key": "学生/学分申报/入口", "value": "教务系统“学分认定”模块", "quote": "办理入口：教务系统“学分认定”模块。"}
+      ],
+      "expectedUncertain": []
+    },
+    {
+      "id": "SIM-003",
+      "title": "【模拟参考】志愿服务项目报名时间（含暂定表述）",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-15",
+      "sourceUrl": "https://example.edu/simulated/notice-003",
+      "snapshot": "报名时间：2026年12月1日09:00至暂定2026年12月8日17:00。\n适用对象：全体在校学生。\n办理入口：校团委志愿服务平台。",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/适用对象", "value": "全体在校学生", "quote": "适用对象：全体在校学生。"},
+        {"key": "学生/竞赛报名/入口", "value": "校团委志愿服务平台", "quote": "办理入口：校团委志愿服务平台。"}
+      ],
+      "expectedUncertain": [
+        {"key": "学生/竞赛报名/截止", "reason": "原文标注暂定，截止日期不得自动确认为有效日期"}
+      ]
+    },
+    {
+      "id": "SIM-004",
+      "title": "【模拟参考】同一通知出现两个互斥报名截止日期",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-02",
+      "sourceUrl": "https://example.edu/simulated/notice-004",
+      "snapshot": "报名时间：2026年11月3日至2026年11月5日。\n报名时间：2026年11月3日至2026年11月6日。\n适用对象：全日制本科生。",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/适用对象", "value": "全日制本科生", "quote": "适用对象：全日制本科生。"}
+      ],
+      "expectedUncertain": [
+        {"key": "学生/竞赛报名/截止", "reason": "同一片段出现互斥日期，应保留多个候选并进入待复核"}
+      ]
+    },
+    {
+      "id": "SIM-005",
+      "title": "【模拟参考】跨年通知缺少年份",
+      "category": "竞赛报名",
+      "noticeDate": "2026-12-20",
+      "sourceUrl": "https://example.edu/simulated/notice-005",
+      "snapshot": "报名时间：1月5日09:30至1月8日17:00。\n适用对象：全日制本科生。",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/适用对象", "value": "全日制本科生", "quote": "适用对象：全日制本科生。"}
+      ],
+      "expectedUncertain": [
+        {"key": "学生/竞赛报名/截止", "reason": "原文未写明年份，不能仅凭发布日期推定"}
+      ]
+    },
+    {
+      "id": "SIM-006",
+      "title": "【模拟参考】现场办理类学分认定通知",
+      "category": "学分认定",
+      "noticeDate": "2026-11-18",
+      "sourceUrl": "https://example.edu/simulated/notice-006",
+      "snapshot": "学生申报时间：2026年11月20日09:00至2026年11月30日17:00。\n材料要求：申请表、身份证复印件。\n办理入口：学生事务中心一楼3号窗口。",
+      "expectedFields": [
+        {"key": "学生/学分申报/截止", "value": "2026-11-30T17:00", "quote": "学生申报时间：2026年11月20日09:00至2026年11月30日17:00。"},
+        {"key": "学生/学分申报/材料", "value": "申请表、身份证复印件", "quote": "材料要求：申请表、身份证复印件。"},
+        {"key": "学生/学分申报/入口", "value": "学生事务中心一楼3号窗口", "quote": "办理入口：学生事务中心一楼3号窗口。"}
+      ],
+      "expectedUncertain": []
+    },
+    {
+      "id": "SIM-007",
+      "title": "【模拟参考】含学院审核与学校终审节点的通知",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-10",
+      "sourceUrl": "https://example.edu/simulated/notice-007",
+      "snapshot": "适用对象：全日制本科生。\n二级学院审核截止：2026年11月28日17:00。\n学校终审截止：2026年12月5日17:00。",
+      "expectedFields": [
+        {"key": "学院/学院审核/截止", "value": "2026-11-28T17:00", "quote": "二级学院审核截止：2026年11月28日17:00。"},
+        {"key": "学校/学校终审/截止", "value": "2026-12-05T17:00", "quote": "学校终审截止：2026年12月5日17:00。"},
+        {"key": "学生/竞赛报名/适用对象", "value": "全日制本科生", "quote": "适用对象：全日制本科生。"}
+      ],
+      "expectedUncertain": []
+    },
+    {
+      "id": "SIM-008",
+      "title": "【模拟参考】初赛与决赛分阶段通知",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-01",
+      "sourceUrl": "https://example.edu/simulated/notice-008",
+      "snapshot": "适用对象：晋级决赛的参赛学生。\n初赛时间：2026年11月15日09:00至2026年11月16日17:00。\n决赛时间：2026年12月10日09:00至2026年12月11日17:00。",
+      "expectedFields": [
+        {"key": "参赛学生/初赛/时间", "value": "2026-11-15T09:00/2026-11-16T17:00", "quote": "初赛时间：2026年11月15日09:00至2026年11月16日17:00。"},
+        {"key": "参赛学生/决赛/时间", "value": "2026-12-10T09:00/2026-12-11T17:00", "quote": "决赛时间：2026年12月10日09:00至2026年12月11日17:00。"},
+        {"key": "学生/竞赛报名/适用对象", "value": "晋级决赛的参赛学生", "quote": "适用对象：晋级决赛的参赛学生。"}
+      ],
+      "expectedUncertain": []
+    },
+    {
+      "id": "SIM-009",
+      "title": "【模拟参考】办理对象另行通知的通知",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-25",
+      "sourceUrl": "https://example.edu/simulated/notice-009",
+      "snapshot": "报名时间：2026年12月1日09:00至2026年12月5日17:00。\n适用对象：另行通知。\n材料要求：另行通知。",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/截止", "value": "2026-12-05T17:00", "quote": "报名时间：2026年12月1日09:00至2026年12月5日17:00。"}
+      ],
+      "expectedUncertain": [
+        {"key": "学生/竞赛报名/适用对象", "reason": "原文写“另行通知”，不能自动确认适用对象"},
+        {"key": "学生/竞赛报名/材料", "reason": "原文写“另行通知”，不能自动确认材料清单"}
+      ]
+    },
+    {
+      "id": "SIM-010",
+      "title": "【模拟参考】同一事项的两个版本（改期）",
+      "category": "竞赛报名",
+      "noticeDate": "2026-11-06",
+      "sourceUrl": "https://example.edu/simulated/notice-010",
+      "snapshot": "报名时间：2026年11月3日09:00至2026年11月20日17:30。\n适用对象：全日制在校本科生（含专升本）。\n材料要求：报名表、学生证复印件。\n办理入口：学校竞赛管理系统 https://example.edu/contest",
+      "expectedFields": [
+        {"key": "学生/竞赛报名/截止", "value": "2026-11-20T17:30", "quote": "报名时间：2026年11月3日09:00至2026年11月20日17:30。"},
+        {"key": "学生/竞赛报名/适用对象", "value": "全日制在校本科生（含专升本）", "quote": "适用对象：全日制在校本科生（含专升本）。"},
+        {"key": "学生/竞赛报名/材料", "value": "报名表、学生证复印件", "quote": "材料要求：报名表、学生证复印件。"},
+        {"key": "学生/竞赛报名/入口", "value": "学校竞赛管理系统 https://example.edu/contest", "quote": "办理入口：学校竞赛管理系统 https://example.edu/contest"}
+      ],
+      "expectedUncertain": [],
+      "relatedTo": "SIM-001",
+      "changeNote": "截止日期由 SIM-001 的 2026-11-10T17:30 覆盖为 2026-11-20T17:30，用于变更影响评测。"
+    }
+  ]
+}

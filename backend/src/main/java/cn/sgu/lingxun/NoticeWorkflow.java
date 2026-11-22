@@ -40,10 +40,12 @@ public class NoticeWorkflow {
             row.getLong("acknowledged_version_id"), nullableLong(row, "target_version_id"), row.getString("todo_state"));
     private final JdbcTemplate db;
     private final ObjectMapper json;
+    private final NoticeExtractionService extractionService;
 
-    public NoticeWorkflow(JdbcTemplate db, ObjectMapper json) {
+    public NoticeWorkflow(JdbcTemplate db, ObjectMapper json, NoticeExtractionService extractionService) {
         this.db = db;
         this.json = json;
+        this.extractionService = extractionService;
     }
 
     @Transactional(readOnly = true)
@@ -65,12 +67,12 @@ public class NoticeWorkflow {
 
     public List<Version> history(long matterId) {
         return db.query("SELECT * FROM notice_version WHERE matter_id=? ORDER BY version_no DESC LIMIT 30",
-                this::mapVersion, matterId);
+                this::mapVersion, matterId).stream().map(this::withExtraction).toList();
     }
 
     public Version version(long id) {
-        return db.query("SELECT * FROM notice_version WHERE id=?", this::mapVersion, id).stream()
-                .findFirst().orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "找不到该通知版本"));
+        return withExtraction(db.query("SELECT * FROM notice_version WHERE id=?", this::mapVersion, id).stream()
+                .findFirst().orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "找不到该通知版本")));
     }
 
     @Transactional
@@ -104,15 +106,27 @@ public class NoticeWorkflow {
         }
         int number = db.queryForObject("SELECT COALESCE(MAX(version_no), 0)+1 FROM notice_version WHERE matter_id=?",
                 Integer.class, matter.id());
+        String mode = input.extractionMode() == null || input.extractionMode().isBlank()
+                ? "RULE" : input.extractionMode().strip().toUpperCase(Locale.ROOT);
+        if (!List.of("RULE", "HYBRID", "LLM").contains(mode)) throw bad("抽取模式仅支持 RULE、HYBRID 或 LLM");
         long id = insert("""
                 INSERT INTO notice_version(matter_id,version_no,base_version_id,source_url,notice_date,simulated,
                   snapshot,snapshot_hash,fields_json,version_state) VALUES (?,?,?,?,?,?,?,?,?,'DRAFT')
                 """, matter.id(), number, matter.currentVersionId(), source, input.noticeDate(),
                 input.simulated(), snapshot, hash, "[]");
         Version created = version(id);
-        List<Field> fields = candidates(created, matter.category());
-        db.update("UPDATE notice_version SET fields_json=? WHERE id=?", json(fields), id);
-        audit(matter.id(), id, actor, "录入并归档", "V" + number + " 已保存正文快照，生成 " + fields.size() + " 个候选字段");
+        List<Field> ruleFields = candidates(created, matter.category());
+        NoticeExtractionService.Outcome outcome;
+        try {
+            outcome = extractionService.enhance(created, matter.category(), ruleFields, mode);
+        } catch (IllegalArgumentException invalidMode) {
+            throw bad(invalidMode.getMessage());
+        }
+        db.update("UPDATE notice_version SET fields_json=? WHERE id=?", json(outcome.fields()), id);
+        saveExtractionMeta(id, outcome.meta());
+        audit(matter.id(), id, actor, "录入并归档",
+                "V" + number + " 已保存正文快照，生成 " + outcome.fields().size() + " 个候选字段"
+                        + "（" + outcome.meta().mode() + " / " + outcome.meta().status() + "）");
         return version(id);
     }
 
@@ -158,17 +172,20 @@ public class NoticeWorkflow {
             int selected = input.option() == null ? 0 : input.option();
             if (selected < 0 || selected >= current.choices().size()) throw bad("请选择经过核对的依据");
             Choice choice = current.choices().get(selected);
-            verifyChoice(choice, draft.matterId());
+            verifyChoice(choice, current.slot(), draft.matterId());
             String treatment = current.change();
             if ("冲突".equals(treatment) || "待核验".equals(treatment)) {
                 treatment = resolvedTreatment(draft, current.key(), choice.value());
             }
-            reviewed = new Field(current.key(), current.slot(), current.choices(), selected, "CONFIRMED", treatment);
+            reviewed = new Field(current.key(), current.slot(), current.choices(), selected, "CONFIRMED", treatment,
+                    current.source());
         } else if ("hold".equals(input.decision())) {
             String treatment = current.choices().size() > 1 ? "冲突" : "待核验";
-            reviewed = new Field(current.key(), current.slot(), current.choices(), null, "HOLD", treatment);
+            reviewed = new Field(current.key(), current.slot(), current.choices(), null, "HOLD", treatment,
+                    current.source());
         } else if ("not_applicable".equals(input.decision())) {
-            reviewed = new Field(current.key(), current.slot(), current.choices(), null, "NOT_APPLICABLE", "不适用");
+            reviewed = new Field(current.key(), current.slot(), current.choices(), null, "NOT_APPLICABLE", "不适用",
+                    current.source());
         } else {
             throw bad("请选择核验结论");
         }
@@ -181,6 +198,17 @@ public class NoticeWorkflow {
         Version draft = version(id);
         if (!"DRAFT".equals(draft.state())) throw conflict("只能修正草稿");
         return NoticeRules.slots(matter(draft.matterId(), false).category());
+    }
+
+    public ChangeSummary changeSummary(long id) {
+        Version current = version(id);
+        Long base = current.baseVersionId();
+        if (base == null) {
+            return new ChangeSummary(current.id(), null, List.of(), List.of(), 0, 0);
+        }
+        Version previous = version(base);
+        if (previous.matterId() != current.matterId()) throw conflict("基线版本不属于同一事项");
+        return ChangeAnalyzer.analyze(previous, current);
     }
 
     @Transactional
@@ -215,9 +243,13 @@ public class NoticeWorkflow {
         }
         Evidence proof = correctionEvidence(draft, input);
         Field before = draft.field(slot.key());
-        Choice corrected = new Choice(value, proof, false, null);
-        Field after = new Field(slot.key(), slot, List.of(corrected), 0, "CONFIRMED",
-                resolvedTreatment(draft, slot.key(), value));
+        Choice corrected = new Choice(value, proof, false, null, "MANUAL", null, null);
+        Choice assessed = EvidenceSupport.assess(draft, slot, corrected);
+        if (!EvidenceSupport.SUFFICIENT.equals(assessed.support())) {
+            throw bad("所选原文不足以支持该字段值：" + assessed.supportReason());
+        }
+        Field after = new Field(slot.key(), slot, List.of(assessed), 0, "CONFIRMED",
+                resolvedTreatment(draft, slot.key(), value), "MANUAL");
         if (after.equals(before)) return draft;
         saveField(draft, after);
         String previous = before == null ? "暂无" : before.choice() != null ? describeEvidence(before.choice())
@@ -284,7 +316,7 @@ public class NoticeWorkflow {
             throw conflict("请先逐项确认、修正或标为待复核");
         }
         for (Field field : draft.fields()) {
-            if ("CONFIRMED".equals(field.state())) verifyChoice(field.choice(), matter.id());
+            if ("CONFIRMED".equals(field.state())) verifyChoice(field.choice(), field.slot(), matter.id());
         }
         verifyDeadlines(draft);
         Version previous = matter.currentVersionId() == null ? null : version(matter.currentVersionId());
@@ -476,7 +508,7 @@ public class NoticeWorkflow {
                 row.getTimestamp("created_at").toLocalDateTime()));
     }
 
-    private void verifyChoice(Choice choice, long matterId) {
+    private void verifyChoice(Choice choice, Slot slot, long matterId) {
         if (choice == null) throw bad("缺少经核验的字段值");
         if (choice.tentative()) throw bad("原文标明暂定或待定，请保留待复核");
         if (choice.reviewReason() != null) throw bad(choice.reviewReason());
@@ -492,6 +524,10 @@ public class NoticeWorkflow {
                 || evidence.start() >= evidence.end()
                 || !source.snapshot().substring(evidence.start(), evidence.end()).equals(evidence.quote())) {
             throw bad("证据区间不能定位到原文");
+        }
+        Choice assessed = EvidenceSupport.assess(source, slot, choice);
+        if (!EvidenceSupport.SUFFICIENT.equals(assessed.support())) {
+            throw bad("证据不足以支持字段结论：" + assessed.supportReason());
         }
     }
 
@@ -561,8 +597,10 @@ public class NoticeWorkflow {
         Field field = previous.field(todo.fieldKey());
         Field currentField = current == null ? null : current.field(todo.fieldKey());
         String dueAt = null;
-        if (confirmed(field)) dueAt = field.choice().value();
-        if (confirmed(currentField)) dueAt = currentField.choice().value();
+        if (!"REVIEW".equals(todo.state())) {
+            if (confirmed(field)) dueAt = field.choice().value();
+            if (confirmed(currentField)) dueAt = currentField.choice().value();
+        }
         if (currentField != null && "NOT_APPLICABLE".equals(currentField.state())) dueAt = null;
         String stage = field == null ? "" : field.slot().stage();
         Version active = current == null ? previous : current;
@@ -624,6 +662,46 @@ public class NoticeWorkflow {
                 nullableLong(row, "base_version_id"), row.getString("source_url"),
                 row.getDate("notice_date").toLocalDate(), row.getBoolean("simulated"), row.getString("snapshot"),
                 row.getString("snapshot_hash"), readFields(row.getString("fields_json")), row.getString("version_state"));
+    }
+
+    private Version withExtraction(Version version) {
+        List<ExtractionMeta> stored = db.query("""
+                SELECT * FROM version_extraction WHERE version_id=?
+                """, (row, index) -> new ExtractionMeta(row.getString("extraction_mode"),
+                row.getString("llm_status"), row.getString("llm_model"),
+                readWarnings(row.getString("warnings_json")),
+                row.getTimestamp("updated_at") == null ? null : row.getTimestamp("updated_at").toLocalDateTime().toString()
+                ), version.id()).stream().toList();
+        ExtractionMeta meta = stored.isEmpty()
+                ? new ExtractionMeta("RULE", "RULE_ONLY", null, List.of(), null) : stored.get(0);
+        return new Version(version.id(), version.matterId(), version.number(), version.baseVersionId(),
+                version.sourceUrl(), version.noticeDate(), version.simulated(), version.snapshot(), version.hash(),
+                version.fields(), version.state(), meta);
+    }
+
+    private void saveExtractionMeta(long versionId, ExtractionMeta meta) {
+        db.update("DELETE FROM version_extraction WHERE version_id=?", versionId);
+        db.update("""
+                INSERT INTO version_extraction(version_id,extraction_mode,llm_status,llm_model,warnings_json)
+                VALUES (?,?,?,?,?)
+                """, versionId, meta.mode(), meta.status(), meta.model(), warningsJson(meta.warnings()));
+    }
+
+    private String warningsJson(List<String> warnings) {
+        try {
+            return json.writeValueAsString(warnings == null ? List.of() : warnings);
+        } catch (JsonProcessingException invalid) {
+            return "[]";
+        }
+    }
+
+    private List<String> readWarnings(String stored) {
+        if (stored == null || stored.isBlank()) return List.of();
+        try {
+            return json.readValue(stored, new TypeReference<>() {});
+        } catch (JsonProcessingException invalid) {
+            return List.of("抽取警告读取失败");
+        }
     }
 
     private List<Field> readFields(String stored) {

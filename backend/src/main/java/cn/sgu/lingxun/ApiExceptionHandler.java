@@ -58,6 +58,13 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(Map.of("message", message), headers, status);
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<Map<String, String>> invalidArgument(IllegalArgumentException error) {
+        String message = error.getMessage() == null || error.getMessage().isBlank()
+                ? "请求参数不正确" : error.getMessage();
+        return ResponseEntity.badRequest().body(Map.of("message", message));
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<Map<String, String>> unexpected(Exception error) {
         log.error("未处理的服务端异常", error);

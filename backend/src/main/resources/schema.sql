@@ -28,6 +28,16 @@ CREATE TABLE IF NOT EXISTS notice_version (
   UNIQUE (matter_id, snapshot_hash)
 );
 
+CREATE TABLE IF NOT EXISTS version_extraction (
+  version_id BIGINT PRIMARY KEY,
+  extraction_mode VARCHAR(24) NOT NULL,
+  llm_status VARCHAR(32) NULL,
+  llm_model VARCHAR(100) NULL,
+  warnings_json LONGTEXT NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (version_id) REFERENCES notice_version(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS subscription (
   username VARCHAR(48) NOT NULL,
   matter_id BIGINT NOT NULL,

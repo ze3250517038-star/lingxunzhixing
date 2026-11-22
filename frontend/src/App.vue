@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { request, requestCalendar, useSession } from './api.js'
+import { request, requestCalendar, requestForm, useSession } from './api.js'
 import NoticeDiff from './NoticeDiff.vue'
 
 const session = ref(null)
@@ -35,14 +35,17 @@ const feedback = ref([])
 const events = ref([])
 
 const emptyDraft = () => ({
-  matterId: '', title: '', category: '竞赛报名', sourceUrl: '', noticeDate: '', snapshot: '', simulated: false
+  matterId: '', title: '', category: '竞赛报名', sourceUrl: '', noticeDate: '', snapshot: '', simulated: false,
+  extractionMode: 'RULE'
 })
 const draft = ref(emptyDraft())
 const proof = ref(null)
 const proofDialog = ref(null)
+const changeImpact = ref(null)
 const correction = ref(null)
 const correctionDialog = ref(null)
 const quoteInput = ref(null)
+const importWarnings = ref([])
 
 const isReviewer = computed(() => session.value?.viewer?.role === 'reviewer')
 const selectedMatter = computed(() => matters.value.find(item => item.matter.id === selectedMatterId.value))
@@ -321,6 +324,28 @@ function displayValue(value) {
   return date ? date[1] + '年' + Number(date[2]) + '月' + Number(date[3]) + '日' + (date[4] ? ' ' + date[4] : '') : value
 }
 
+function extractionModeLabel(mode) {
+  return { RULE: '规则引擎', HYBRID: '规则 + LLM', LLM: 'LLM 优先' }[mode] || mode || '未知'
+}
+
+function extractionStatusLabel(status) {
+  return {
+    RULE_ONLY: '仅规则',
+    HYBRID_OK: '混合完成',
+    LLM_OK: 'LLM 完成',
+    RULE_FALLBACK: '已回退规则',
+    HYBRID_PARTIAL: '混合部分完成'
+  }[status] || status || '未知'
+}
+
+function sourceLabel(source) {
+  return { RULE: '规则', LLM: 'LLM', HYBRID: '规则+LLM', MANUAL: '人工' }[source] || source || '未标注'
+}
+
+function supportLabel(level) {
+  return { SUFFICIENT: '证据充分', WEAK: '证据偏弱', INSUFFICIENT: '证据不足', UNKNOWN: '未评估' }[level] || '未评估'
+}
+
 function publishedValue(field) {
   if (!field) return '暂无'
   if (field.state === 'NOT_APPLICABLE') return '不适用'
@@ -436,6 +461,9 @@ async function inspectVersion(next) {
   version.value = next
   comparison.value = next?.baseVersionId
     ? history.value.find(item => item.id === next.baseVersionId) ?? await request('/versions/' + next.baseVersionId)
+    : null
+  changeImpact.value = next?.baseVersionId
+    ? await request('/maintenance/versions/' + next.id + '/change-impact')
     : null
 }
 
@@ -615,6 +643,7 @@ function showEvidence(field, choice = fieldChoice(field)) {
 function sample(kind) {
   const contest = adminMatters.value.find(item => item.title === '化学实验室安全知识竞赛')
   if (!contest) return
+  importWarnings.value = []
   draft.value = {
     ...emptyDraft(),
     matterId: contest.id,
@@ -627,6 +656,28 @@ function sample(kind) {
   }
 }
 
+function importFromUrl() {
+  return work(async () => {
+    if (!draft.value.sourceUrl) throw new Error('请先填写学校通知链接')
+    const imported = await request('/maintenance/import/url', 'POST', { url: draft.value.sourceUrl })
+    draft.value.snapshot = imported.text
+    if (!draft.value.title && imported.title) draft.value.title = imported.title.slice(0, 180)
+    importWarnings.value = imported.warnings ?? []
+  }, '已抓取网页正文。请核对文字是否完整，再归档生成候选。')
+}
+
+function importFromFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  return work(async () => {
+    const imported = await requestForm('/maintenance/import/file', file)
+    draft.value.snapshot = imported.text
+    if (!draft.value.title && imported.title) draft.value.title = imported.title.slice(0, 180)
+    importWarnings.value = imported.warnings ?? []
+  }, '已解析本地通知文件。请核对正文和字段后再归档。')
+}
+
 function createDraft() {
   return work(async () => {
     const recorded = await request('/maintenance/drafts', 'POST', {
@@ -634,6 +685,7 @@ function createDraft() {
       matterId: draft.value.matterId || null
     })
     draft.value = emptyDraft()
+    importWarnings.value = []
     reviewMatterId.value = recorded.matterId
     await loadAdmin()
     await loadHistory(recorded.id)
@@ -1234,6 +1286,22 @@ onMounted(() => work(async () => {
             <label>学校通知链接<input v-model="draft.sourceUrl" type="url" placeholder="https://www.sgu.edu.cn/…" maxlength="500" required></label>
             <label>通知日期<input v-model="draft.noticeDate" type="date" required></label>
           </div>
+          <div class="footer-actions">
+            <button type="button" class="outline" :disabled="busy" @click="importFromUrl">从链接抓取网页正文</button>
+            <label class="text-button">上传通知文件（txt/md/html/docx/pdf）
+              <input type="file" accept=".txt,.md,.html,.htm,.docx,.pdf" :disabled="busy" @change="importFromFile" hidden>
+            </label>
+            <span class="quiet">只抓取公开静态页面，拒绝内网链接；抓取后仍需人工核对。</span>
+          </div>
+          <p v-for="warning in importWarnings" :key="warning" class="quiet">{{ warning }}</p>
+          <label>字段抽取方式
+            <select v-model="draft.extractionMode">
+              <option value="RULE">规则引擎（本地离线，结果来源标记为规则）</option>
+              <option value="HYBRID">混合抽取（规则 + LLM，冲突转待复核）</option>
+              <option value="LLM">LLM 优先（不可用时自动回退规则并标注）</option>
+            </select>
+          </label>
+          <p class="quiet">LLM 由服务端环境变量配置；模型失败、超时或无 Key 时只退回规则模式，不会伪造 LLM 结果。</p>
           <label>正文或附件的去标识摘录
             <textarea v-model="draft.snapshot" rows="8" maxlength="40000" required
               placeholder="按段落粘贴，保留角色和阶段标题。可在单独一行填写“适用对象：…”“材料要求：…”“办理入口：…”。"></textarea>
@@ -1260,6 +1328,8 @@ onMounted(() => work(async () => {
             <div>
               <h2>V{{ version.number }} {{ version.state === 'DRAFT' ? '字段核验' : '版本详情' }}</h2>
               <p class="quiet">{{ version.simulated ? '模拟内容' : '学校来源' }} · {{ displayValue(version.noticeDate) }}<span v-if="comparison"> · 对照 V{{ comparison.number }}</span></p>
+              <p v-if="version.extraction" class="quiet">抽取链路：{{ extractionModeLabel(version.extraction.mode) }} · {{ extractionStatusLabel(version.extraction.status) }}<span v-if="version.extraction.model"> · {{ version.extraction.model }}</span></p>
+              <p v-if="version.extraction?.warnings?.length" class="quiet">抽取警告：{{ version.extraction.warnings.join('；') }}</p>
             </div>
             <button v-if="version.state === 'DRAFT'" class="primary" :disabled="busy || awaiting > 0 || !version.fields.length" @click="publishVersion">发布版本</button>
             <button v-else-if="activeMatter?.currentVersionId === version.id" class="outline" :disabled="busy" @click="withdrawVersion">撤回本版</button>
@@ -1271,6 +1341,16 @@ onMounted(() => work(async () => {
             <a :href="version.sourceUrl" target="_blank" rel="noopener noreferrer">校方原通知</a>
           </details>
           <NoticeDiff v-if="comparison" :key="version.id" :previous="comparison" :current="version" />
+          <details v-if="changeImpact?.fields.length" class="archive">
+            <summary>字段级变更影响：{{ changeImpact.affectedFields }} 项，涉及角色 {{ changeImpact.affectedRoles.join('、') }}<span v-if="changeImpact.affectedTasks"> · {{ changeImpact.affectedTasks }} 项学生截止待办需复核</span></summary>
+            <div class="stack">
+              <p v-for="item in changeImpact.fields" :key="item.fieldKey" class="quiet">
+                <strong>{{ item.fieldKey }}</strong> · {{ item.treatment }}：
+                {{ item.previousValue || '上一版未确认' }} → {{ item.currentValue || '本版待复核' }}
+                <span v-if="item.taskAffected"> · 影响学生待办</span>
+              </p>
+            </div>
+          </details>
           <div v-if="version.state === 'DRAFT'" class="panel-head review-count">
             <p class="quiet">{{ version.fields.length ? '剩余 ' + awaiting + ' 项待人工核验。' : '未识别到字段，可从原文补录。' }}</p>
             <button class="outline" :disabled="busy" @click="editField()">补录字段</button>
@@ -1286,6 +1366,7 @@ onMounted(() => work(async () => {
                 <strong>{{ choice.value == null ? '日期待核定' : displayValue(choice.value) }}</strong>
                 <small v-if="choice.tentative">原文标注暂定或待定</small>
                 <small v-if="choice.reviewReason">{{ choice.reviewReason }}</small>
+                <small v-if="choice.extractionSource || choice.supportLevel" class="quiet">来源：{{ sourceLabel(choice.extractionSource) }} · {{ supportLabel(choice.supportLevel) }}<template v-if="choice.supportReason"> · {{ choice.supportReason }}</template></small>
               </span>
               <button class="text-button" :disabled="busy" @click="showEvidence(field, choice)">定位依据</button>
               <button v-if="version.state === 'DRAFT' && !choice.tentative && !choice.reviewReason" class="outline"
@@ -1383,6 +1464,10 @@ onMounted(() => work(async () => {
       <div class="proof-value"><span class="label">字段值</span><strong>{{ proof.choice.value == null ? '日期待核定' : displayValue(proof.choice.value) }}</strong></div>
       <blockquote>{{ proof.choice.evidence.quote }}</blockquote>
       <p v-if="isReviewer" class="quiet">字符区间 [{{ proof.choice.evidence.start }}, {{ proof.choice.evidence.end }})</p>
+      <p v-if="proof.choice.extractionSource || proof.choice.supportLevel" class="quiet">
+        抽取来源：{{ sourceLabel(proof.choice.extractionSource) }} · 证据判断：{{ supportLabel(proof.choice.supportLevel) }}
+      </p>
+      <p v-if="proof.choice.supportReason" class="quiet">{{ proof.choice.supportReason }}</p>
       <a :href="proof.notice.sourceUrl" target="_blank" rel="noopener noreferrer">查看校方原通知</a>
     </div>
   </dialog>

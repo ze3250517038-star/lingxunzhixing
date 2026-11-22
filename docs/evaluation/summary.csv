@@ -1,0 +1,4 @@
+﻿dataset,provenance,generated_at,requested_mode,effective_mode,status,expected_fields,predicted_fields,true_positive,false_positive,false_negative,precision,recall,f1,role_mismatch,evidence_locatable_rate,unsupported_rate,uncertain_auto_confirmed,rows
+"..\docs\datasets\lingxun-simulated-reference-v1.json","SIMULATED_REFERENCE","2026-11-23T01:10:55.928418200","RULE","RULE","RULE_ONLY",26,26,26,0,0,1.0,1.0,1.0,0,1.0,0.0,0,26
+"..\docs\datasets\lingxun-simulated-reference-v1.json","SIMULATED_REFERENCE","2026-11-23T01:10:55.928418200","HYBRID","RULE_FALLBACK","DISABLED",26,26,26,0,0,1.0,1.0,1.0,0,1.0,0.0,0,26
+"..\docs\datasets\lingxun-simulated-reference-v1.json","SIMULATED_REFERENCE","2026-11-23T01:10:55.928418200","LLM","RULE_FALLBACK","DISABLED",26,26,26,0,0,1.0,1.0,1.0,0,1.0,0.0,0,26

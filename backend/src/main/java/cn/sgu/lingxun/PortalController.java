@@ -24,13 +24,16 @@ class PortalController {
     private record StepChange(boolean done) {}
     private record FeedbackInput(long versionId, String message) {}
     private record Withdrawal(long versionId) {}
+    private record ImportInput(String url) {}
 
     private final SessionAccess access;
     private final NoticeWorkflow notices;
+    private final NoticeImportService importer;
 
-    PortalController(SessionAccess access, NoticeWorkflow notices) {
+    PortalController(SessionAccess access, NoticeWorkflow notices, NoticeImportService importer) {
         this.access = access;
         this.notices = notices;
+        this.importer = importer;
     }
 
     @GetMapping("/session")
@@ -131,6 +134,20 @@ class PortalController {
         return notices.draft(input, actor);
     }
 
+    @PostMapping("/maintenance/import/url")
+    NoticeImportService.Preview importUrl(HttpServletRequest request, @RequestBody ImportInput input) {
+        access.require(request, REVIEWER, true);
+        return importer.fromUrl(input.url());
+    }
+
+    @PostMapping(value = "/maintenance/import/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    NoticeImportService.Preview importFile(HttpServletRequest request,
+                                           @RequestParam("file") org.springframework.web.multipart.MultipartFile file)
+            throws java.io.IOException {
+        access.require(request, REVIEWER, true);
+        return importer.fromFile(file.getOriginalFilename(), file.getBytes());
+    }
+
     @PutMapping("/maintenance/versions/{id}/fields")
     Version review(HttpServletRequest request, @PathVariable long id, @RequestBody ReviewInput input) {
         return notices.review(id, input, access.require(request, REVIEWER, true).username());
@@ -140,6 +157,12 @@ class PortalController {
     List<Slot> fieldOptions(HttpServletRequest request, @PathVariable long id) {
         access.require(request, REVIEWER, false);
         return notices.fieldOptions(id);
+    }
+
+    @GetMapping("/maintenance/versions/{id}/change-impact")
+    ChangeSummary changeImpact(HttpServletRequest request, @PathVariable long id) {
+        access.require(request, REVIEWER, false);
+        return notices.changeSummary(id);
     }
 
     @PutMapping("/maintenance/versions/{id}/fields/correction")
