@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: lingxun-zhixing
+  profiles:
+    default: mysql
+  datasource:
+    hikari:
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  sql:
+    init:
+      mode: always
+server:
+  address: 127.0.0.1
+  port: ${LINGXUN_PORT:8096}
+  servlet:
+    session:
+      timeout: 2h
+      cookie:
+        name: LINGXUN_SESSION
+        http-only: true
+        same-site: lax
+

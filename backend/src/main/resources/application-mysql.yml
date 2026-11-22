@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: ${LINGXUN_DB_URL:jdbc:mysql://127.0.0.1:3306/lingxun?characterEncoding=UTF-8&connectionTimeZone=Asia/Shanghai}
+    username: ${LINGXUN_DB_USER}
+    password: ${LINGXUN_DB_PASSWORD}
+lingxun:
+  demo: false
+  student-password: ${LINGXUN_STUDENT_PASSWORD:}
+  reviewer-password: ${LINGXUN_REVIEWER_PASSWORD:}
+server:
+  address: ${LINGXUN_BIND:127.0.0.1}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: ${LINGXUN_SECURE_COOKIE:false}
