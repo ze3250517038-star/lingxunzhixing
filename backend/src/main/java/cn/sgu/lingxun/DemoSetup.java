@@ -60,19 +60,23 @@ class DemoSetup implements ApplicationRunner {
     }
 
     private void seedCourses() {
+        if (timetable.semester("student") == null) {
+            timetable.saveSemester("student", new SemesterInput("2026-2027 学年第一学期",
+                    "2026-08-31", "2027-01-17"));
+        }
         if (timetable.count("student") > 0) return;
         timetable.create("student", new CourseInput("物联网导论", "李老师", "信息楼 A203", 1,
-                "08:00", "09:40", "ocean", "第一周至第十六周"));
+                "08:00", "09:40", "ocean", "第一周至第十六周", "EVERY"));
         timetable.create("student", new CourseInput("大学英语", "陈老师", "教学楼 B301", 1,
-                "10:00", "11:40", "amber", "携带听力耳机"));
+                "10:00", "11:40", "amber", "携带听力耳机", "EVERY"));
         timetable.create("student", new CourseInput("Java 程序设计", "周老师", "实验楼 302", 2,
-                "14:00", "15:40", "sage", "每周实验课"));
+                "14:00", "15:40", "sage", "每周实验课", "EVERY"));
         timetable.create("student", new CourseInput("计算机网络", "黄老师", "信息楼 A305", 3,
-                "08:00", "09:40", "violet", ""));
+                "08:00", "09:40", "violet", "", "EVERY"));
         timetable.create("student", new CourseInput("数据库原理", "林老师", "信息楼 B202", 4,
-                "10:00", "11:40", "rose", "课程作业在周五前提交"));
+                "10:00", "11:40", "rose", "课程作业在周五前提交", "EVERY"));
         timetable.create("student", new CourseInput("大学物理实验", "张老师", "物理实验中心", 5,
-                "14:00", "16:30", "slate", "提前十分钟到实验室"));
+                "14:00", "16:30", "slate", "提前十分钟到实验室", "EVERY"));
     }
 
     private void seed(String title, String category, String source, LocalDate date, String body) {

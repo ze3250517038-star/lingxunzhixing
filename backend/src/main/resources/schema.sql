@@ -103,7 +103,17 @@ CREATE TABLE IF NOT EXISTS course (
   end_time VARCHAR(5) NOT NULL,
   color VARCHAR(16) NOT NULL DEFAULT 'sage',
   note VARCHAR(300) NOT NULL DEFAULT '',
+  week_pattern VARCHAR(8) NOT NULL DEFAULT 'EVERY',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (username) REFERENCES portal_account(username)
+);
+
+CREATE TABLE IF NOT EXISTS timetable_semester (
+  username VARCHAR(48) PRIMARY KEY,
+  semester_name VARCHAR(80) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (username) REFERENCES portal_account(username)
 );

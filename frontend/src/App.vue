@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { request, requestCalendar, requestForm, useSession } from './api.js'
 import NoticeDiff from './NoticeDiff.vue'
 import TimetableWeek from './TimetableWeek.vue'
+import { courseActiveOnDate, semesterRange, weekPatternLabel } from './timetable.js'
 
 const session = ref(null)
 const page = ref('matters')
@@ -32,6 +33,9 @@ const courseColors = [
   { key: 'slate', label: '岩灰' }
 ]
 const courseForm = ref(emptyCourse())
+const semester = ref(null)
+const semesterDialog = ref(null)
+const semesterForm = ref(emptySemester())
 const myFeedback = ref([])
 const calendarMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12))
 const calendarSelectedDate = ref(formatDateKey(new Date()))
@@ -170,15 +174,22 @@ const studentReviewTodos = computed(() => todos.value.filter(task => task.state 
 const studentSubscribed = computed(() => matters.value.filter(item => item.subscribed))
 const todayCourses = computed(() => timetable.value
   .filter(course => course.weekday === todayWeekday.value)
+  .filter(course => courseActiveOnDate(course, semester.value, new Date()))
   .sort((first, second) => first.startTime.localeCompare(second.startTime)))
+const currentSemesterLabel = computed(() => semester.value?.name || '未设置学期')
+const currentSemesterRange = computed(() => semesterRange(semester.value))
 const todayDeadlines = computed(() => todos.value.filter(task =>
   ['PENDING', 'REVIEW'].includes(task.state) && todoDueKey(task) === formatDateKey(new Date())))
 
 function emptyCourse(weekday = 0) {
   return {
     name: '', teacher: '', location: '', weekday: weekday || (new Date().getDay() || 7),
-    startTime: '08:00', endTime: '09:40', color: 'sage', note: ''
+    startTime: '08:00', endTime: '09:40', color: 'sage', note: '', weekPattern: 'EVERY'
   }
+}
+
+function emptySemester() {
+  return { name: '', startDate: '', endDate: '' }
 }
 const todayFocus = computed(() => todos.value
   .filter(task => task.state === 'REVIEW'
@@ -430,20 +441,27 @@ async function loadTodos() {
 }
 
 async function loadTimetable() {
-  timetable.value = await request('/timetable')
+  const [courseList, semesterInfo] = await Promise.all([
+    request('/timetable'),
+    request('/timetable/semester')
+  ])
+  timetable.value = courseList
+  semester.value = semesterInfo
 }
 
 async function loadStudentHome() {
-  const [matterList, todoList, feedbackList, courseList] = await Promise.all([
+  const [matterList, todoList, feedbackList, courseList, semesterInfo] = await Promise.all([
     request('/matters?q=' + encodeURIComponent(searchTerm.value)),
     request('/todos'),
     request('/feedback/mine'),
-    request('/timetable')
+    request('/timetable'),
+    request('/timetable/semester')
   ])
   matters.value = matterList
   todos.value = todoList
   myFeedback.value = feedbackList
   timetable.value = courseList
+  semester.value = semesterInfo
   loadReminderDismissed()
   if (!matters.value.some(item => item.matter.id === selectedMatterId.value)) {
     selectMatter(matters.value[0]?.matter.id ?? null)
@@ -567,7 +585,7 @@ async function openCourseEditor(course = null, weekday = 0) {
     ? {
         name: course.name, teacher: course.teacher, location: course.location,
         weekday: course.weekday, startTime: course.startTime, endTime: course.endTime,
-        color: course.color, note: course.note
+        color: course.color, note: course.note, weekPattern: course.weekPattern || 'EVERY'
       }
     : emptyCourse(weekday)
   error.value = ''
@@ -605,6 +623,31 @@ function removeCourse() {
     timetable.value = timetable.value.filter(course => course.id !== id)
     closeCourseDialog()
   }, '课程已从课表删除。')
+}
+
+async function openSemesterEditor() {
+  semesterForm.value = semester.value
+    ? {
+        name: semester.value.name,
+        startDate: semester.value.startDate,
+        endDate: semester.value.endDate
+      }
+    : emptySemester()
+  error.value = ''
+  await nextTick()
+  semesterDialog.value?.showModal()
+}
+
+function closeSemesterDialog() {
+  semesterDialog.value?.close()
+  semesterForm.value = emptySemester()
+}
+
+function saveSemester() {
+  return work(async () => {
+    semester.value = await request('/timetable/semester', 'PUT', { ...semesterForm.value })
+    closeSemesterDialog()
+  }, '学期起止已保存，单双周将按周次重新过滤。')
 }
 
 function courseDuration(course) {
@@ -1007,7 +1050,7 @@ onMounted(() => work(async () => {
                 <span class="class-time">{{ course.startTime }}</span>
                 <span class="class-copy">
                   <strong>{{ course.name }}</strong>
-                  <small>{{ course.location || '地点待定' }}<template v-if="course.teacher"> · {{ course.teacher }}</template></small>
+                  <small>{{ course.location || '地点待定' }}<template v-if="course.teacher"> · {{ course.teacher }}</template><template v-if="course.weekPattern && course.weekPattern !== 'EVERY'"> · {{ weekPatternLabel(course.weekPattern) }}</template></small>
                 </span>
                 <span class="class-duration">{{ courseDuration(course) }}</span>
               </button>
@@ -1119,7 +1162,13 @@ onMounted(() => work(async () => {
           <div>
             <span class="eyebrow">PERSONAL SCHEDULE</span>
             <h2>把课表和截止事项放在同一张时间表上。</h2>
-            <p class="quiet">课程只保存在当前学生账号；时间冲突会标红。课表不参与通知核验，也不会改变任何待办日期。</p>
+            <p class="quiet">课程只保存在当前学生账号；单双周按学期周次生效，时间冲突只检查当前周次。课表不参与通知核验，也不会改变任何待办日期。</p>
+            <div class="semester-line">
+              <span class="semester-badge">学期</span>
+              <strong>{{ currentSemesterLabel }}</strong>
+              <small v-if="currentSemesterRange">{{ currentSemesterRange }}</small>
+              <button class="text-button" @click="openSemesterEditor">{{ semester ? '修改学期' : '设置学期' }}</button>
+            </div>
           </div>
           <div class="schedule-intro-meta">
             <strong>{{ timetable.length }}</strong>
@@ -1127,11 +1176,11 @@ onMounted(() => work(async () => {
             <button class="primary" @click="openCourseEditor(null, todayWeekday)">+ 添加课程</button>
           </div>
         </section>
-        <TimetableWeek :courses="timetable"
+        <TimetableWeek :courses="timetable" :semester="semester"
           @add="openCourseEditor(null, $event)" @edit="openCourseEditor($event)" />
         <section class="panel schedule-note">
           <h3>怎么用</h3>
-          <p class="quiet">先录入每周固定课程；首页会显示“今天上什么”和“今天要交什么”。遇到通知改期，截止事项仍以待办里的证据核验结果为准。</p>
+          <p class="quiet">先设置学期起止和周次，再录入每周固定课程；单周、双周课程只会出现在对应周次。首页“今天上什么”会同步过滤。遇到通知改期，截止事项仍以待办里的证据核验结果为准。</p>
         </section>
       </div>
 
@@ -1615,12 +1664,19 @@ onMounted(() => work(async () => {
       <label>课程名称
         <input v-model="courseForm.name" maxlength="120" required placeholder="例如：物联网导论">
       </label>
-      <div class="form-row">
+      <div class="form-row course-meta-row">
         <label>星期
           <select v-model.number="courseForm.weekday" required>
             <option :value="1">周一</option><option :value="2">周二</option><option :value="3">周三</option>
             <option :value="4">周四</option><option :value="5">周五</option><option :value="6">周六</option>
             <option :value="7">周日</option>
+          </select>
+        </label>
+        <label>上课周次
+          <select v-model="courseForm.weekPattern" required>
+            <option value="EVERY">每周</option>
+            <option value="ODD">单周</option>
+            <option value="EVEN">双周</option>
           </select>
         </label>
         <label>课程颜色
@@ -1645,6 +1701,31 @@ onMounted(() => work(async () => {
         <button v-if="editingCourseId" type="button" class="text-button warn-text" :disabled="busy" @click="removeCourse">删除课程</button>
         <span class="quiet">课程按当前账号保存，其他学生看不到。</span>
         <button class="primary" :disabled="busy">保存课程</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog ref="semesterDialog" class="evidence-dialog semester-dialog" @close="semesterForm = emptySemester()">
+    <form v-if="semesterForm" class="form-stack" @submit.prevent="saveSemester">
+      <div class="panel-head">
+        <div>
+          <span class="eyebrow">SEMESTER SETUP</span>
+          <h2>学期设置</h2>
+        </div>
+        <button type="button" class="outline" :disabled="busy" @click="closeSemesterDialog">取消</button>
+      </div>
+      <label>学期名称
+        <input v-model="semesterForm.name" maxlength="80" required placeholder="例如：2026-2027 学年第一学期">
+      </label>
+      <div class="form-row">
+        <label>开始日期<input v-model="semesterForm.startDate" type="date" required></label>
+        <label>结束日期<input v-model="semesterForm.endDate" type="date" :min="semesterForm.startDate" required></label>
+      </div>
+      <p class="quiet">周次从开始日期所在周算第 1 周；单周、双周课程按这个周次过滤。建议开始日期选周一，结束日期选本学期最后一天。</p>
+      <p v-if="error" class="status error" role="alert">{{ error }}</p>
+      <div class="footer-actions dialog-actions">
+        <span class="quiet">学期设置只影响当前学生账号。</span>
+        <button class="primary" :disabled="busy">保存学期</button>
       </div>
     </form>
   </dialog>

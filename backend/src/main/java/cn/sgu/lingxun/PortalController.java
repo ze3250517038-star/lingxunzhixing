@@ -113,6 +113,16 @@ class PortalController {
         return timetableService.list(access.require(request, STUDENT, false).username());
     }
 
+    @GetMapping("/timetable/semester")
+    Semester semester(HttpServletRequest request) {
+        return timetableService.semester(access.require(request, STUDENT, false).username());
+    }
+
+    @PutMapping("/timetable/semester")
+    Semester saveSemester(HttpServletRequest request, @RequestBody SemesterInput input) {
+        return timetableService.saveSemester(access.require(request, STUDENT, true).username(), input);
+    }
+
     @PostMapping("/timetable")
     Course createCourse(HttpServletRequest request, @RequestBody CourseInput input) {
         return timetableService.create(access.require(request, STUDENT, true).username(), input);

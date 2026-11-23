@@ -662,6 +662,26 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
     linear-gradient(135deg, #ffffff, #f7fbf7);
 }
 .schedule-intro h2 { max-width: 42rem; }
+.semester-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .45rem .6rem;
+  margin-top: .75rem;
+  font-size: .82rem;
+}
+.semester-badge {
+  padding: .16rem .45rem;
+  border-radius: 999px;
+  background: #e3f1e8;
+  color: #21614e;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.semester-line strong { color: #173f34; }
+.semester-line small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.semester-line .text-button { font-size: .78rem; }
 .schedule-intro-meta {
   display: flex;
   align-items: baseline;
@@ -703,6 +723,15 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
   color: #8c3b2e;
   font-size: .87rem;
 }
+.schedule-warning.soft {
+  border-color: #d8e5d3;
+  background: #f5faf3;
+  color: #526b51;
+}
+.timetable-toolbar .week-term {
+  color: #1c6f5c;
+  font-weight: 700;
+}
 .week-scroll {
   overflow-x: auto;
   border: 1px solid #e2eae4;
@@ -729,6 +758,8 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
 .weekly-day:last-child { border-right: 0; }
 .weekly-day.weekend { background: #fbfaf7; }
 .weekly-day.today { background: #f4fbf5; }
+.weekly-day.outside { background: repeating-linear-gradient(135deg, #fbfbf9 0 10px, #f6f7f3 10px 20px); }
+.weekly-day.outside .day-head { color: #9aa69d; }
 .day-head {
   position: relative;
   display: flex;
@@ -817,6 +848,18 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
   font-size: .78rem;
   line-height: 1.35;
 }
+.course-block .course-pattern {
+  display: inline-block;
+  margin-left: .2rem;
+  padding: 0 .22rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .7);
+  font-size: .58rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: middle;
+}
 .course-block span { font-size: .67rem; opacity: .8; white-space: nowrap; }
 .course-block small {
   display: block;
@@ -854,6 +897,8 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
 .dialog-actions { align-items: center; }
 .dialog-actions .primary { margin-left: auto; }
 .course-dialog { width: min(38rem, calc(100vw - 1.5rem)); }
+.semester-dialog { width: min(40rem, calc(100vw - 1.5rem)); }
+.course-meta-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .color-swatches { display: flex; align-items: center; gap: .45rem; padding-top: .35rem; }
 .color-swatch {
   width: 1.6rem;
@@ -929,7 +974,8 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
   .timetable-toolbar .calendar-nav { width: 100%; }
   .timetable-toolbar .calendar-nav button { flex: 1 1 auto; }
   .schedule-intro-meta { width: 100%; }
-  .course-dialog { padding: .9rem; }
+  .course-meta-row { grid-template-columns: minmax(0, 1fr); }
+  .course-dialog, .semester-dialog { padding: .9rem; }
   .dialog-actions { flex-direction: column; align-items: stretch; }
   .dialog-actions .primary { margin-left: 0; }
 }

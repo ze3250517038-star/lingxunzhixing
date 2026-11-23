@@ -100,10 +100,12 @@ final class Models {
         }
     }
     record Course(long id, String name, String teacher, String location, int weekday,
-                  String startTime, String endTime, String color, String note,
+                  String startTime, String endTime, String color, String note, String weekPattern,
                   LocalDateTime updatedAt) {}
     record CourseInput(String name, String teacher, String location, Integer weekday,
-                       String startTime, String endTime, String color, String note) {}
+                       String startTime, String endTime, String color, String note, String weekPattern) {}
+    record Semester(String name, LocalDate startDate, LocalDate endDate, LocalDateTime updatedAt) {}
+    record SemesterInput(String name, String startDate, String endDate) {}
     record Viewer(String username, String role) {}
     record Feedback(long id, long matterId, long versionId, String title, String message,
                     boolean handled, LocalDateTime createdAt) {}

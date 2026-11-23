@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Map;
 
 import static cn.sgu.lingxun.Models.Course;
+import static cn.sgu.lingxun.Models.Semester;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.http.HttpMethod.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
@@ -88,6 +89,62 @@ class TimetableTest {
         send(student, PUT, "/api/timetable/" + created.id(), course("越权修改", 6, "09:00", "10:30"))
                 .andExpect(status().isNotFound());
         send(student, DELETE, "/api/timetable/" + created.id(), null).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void studentCanSetSemesterAndInvalidDatesAreRejected() throws Exception {
+        Client student = login("student", "lingxun-demo");
+        Semester seeded = decode(send(student, GET, "/api/timetable/semester", null), Semester.class);
+        assertThat(seeded.name()).contains("2026-2027");
+
+        Semester saved = decode(send(student, PUT, "/api/timetable/semester", Map.of(
+                "name", "2026-2027 学年第二学期",
+                "startDate", "2027-02-22",
+                "endDate", "2027-07-04")), Semester.class);
+        assertThat(saved.name()).isEqualTo("2026-2027 学年第二学期");
+        assertThat(saved.startDate()).isEqualTo("2027-02-22");
+        assertThat(saved.endDate()).isEqualTo("2027-07-04");
+
+        send(student, PUT, "/api/timetable/semester", Map.of(
+                "name", "倒置日期", "startDate", "2027-07-04", "endDate", "2027-02-22"))
+                .andExpect(status().isBadRequest());
+        send(student, PUT, "/api/timetable/semester", Map.of(
+                "name", "错误格式", "startDate", "2027/02/22", "endDate", "2027-07-04"))
+                .andExpect(status().isBadRequest());
+        send(new Client(student.session(), null), PUT, "/api/timetable/semester", Map.of(
+                "name", "无令牌", "startDate", "2027-02-22", "endDate", "2027-07-04"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void courseWeekPatternIsValidatedAndSaved() throws Exception {
+        Client student = login("student", "lingxun-demo");
+        Course created = decode(send(student, POST, "/api/timetable", Map.of(
+                "name", "编译原理", "teacher", "郑老师", "location", "信息楼 A401",
+                "weekday", 2, "startTime", "16:00", "endTime", "17:40",
+                "color", "violet", "note", "仅单周", "weekPattern", "odd")), Course.class);
+        assertThat(created.weekPattern()).isEqualTo("ODD");
+
+        Course updated = decode(send(student, PUT, "/api/timetable/" + created.id(), Map.of(
+                "name", "编译原理", "teacher", "郑老师", "location", "信息楼 A401",
+                "weekday", 2, "startTime", "16:00", "endTime", "17:40",
+                "color", "violet", "note", "改为双周", "weekPattern", "EVEN")), Course.class);
+        assertThat(updated.weekPattern()).isEqualTo("EVEN");
+
+        send(student, POST, "/api/timetable", Map.of(
+                "name", "非法周次", "teacher", "", "location", "", "weekday", 2,
+                "startTime", "18:00", "endTime", "19:00", "color", "sage", "note", "",
+                "weekPattern", "WEEKLY")).andExpect(status().isBadRequest());
+        send(student, DELETE, "/api/timetable/" + created.id(), null).andExpect(status().isOk());
+    }
+
+    @Test
+    void reviewerCannotReadStudentSemester() throws Exception {
+        Client reviewer = login("reviewer", "lingxun-demo");
+        send(reviewer, GET, "/api/timetable/semester", null).andExpect(status().isForbidden());
+        send(reviewer, PUT, "/api/timetable/semester", Map.of(
+                "name", "越权学期", "startDate", "2027-02-22", "endDate", "2027-07-04"))
+                .andExpect(status().isForbidden());
     }
 
     private Map<String, Object> course(String name, int weekday, String start, String end) {

@@ -1,10 +1,19 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {
+  courseActiveOnDate,
+  dateInSemester,
+  dateKey,
+  semesterWeekLabel,
+  semesterWeekMeta,
+  weekPatternLabel
+} from './timetable'
 
 const props = defineProps({
-  courses: { type: Array, default: () => [] }
+  courses: { type: Array, default: () => [] },
+  semester: { type: Object, default: null }
 })
-const emit = defineEmits(['add', 'edit', 'remove'])
+const emit = defineEmits(['add', 'edit'])
 
 const DAY_START = 8 * 60
 const DAY_END = 20 * 60
@@ -33,10 +42,13 @@ const weekDays = computed(() => Array.from({ length: 7 }, (_, index) => {
     day: date.getDate(),
     date: date.getMonth() + 1 + '月' + date.getDate() + '日',
     key,
+    dateValue: date,
+    inSemester: dateInSemester(date, props.semester),
     today: key === dateKey(now.value),
     weekend: index >= 5
   }
 }))
+const weekMeta = computed(() => semesterWeekMeta(props.semester, monday.value))
 const weekRange = computed(() => {
   const start = weekDays.value[0]
   const end = weekDays.value[6]
@@ -47,7 +59,13 @@ const weekRange = computed(() => {
 })
 const todayCourses = computed(() => props.courses
   .filter(course => course.weekday === (now.value.getDay() || 7))
+  .filter(course => courseActiveOnDate(course, props.semester, now.value))
   .sort((first, second) => first.startTime.localeCompare(second.startTime)))
+const weekCourses = computed(() => props.courses.filter(course => {
+  const day = weekDays.value[course.weekday - 1]
+  return day && courseActiveOnDate(course, props.semester, day.dateValue)
+}))
+const termLabel = computed(() => semesterWeekLabel(weekMeta.value))
 const nowTop = computed(() => {
   const minutes = now.value.getHours() * 60 + now.value.getMinutes()
   if (minutes < DAY_START || minutes > DAY_END) return null
@@ -55,7 +73,7 @@ const nowTop = computed(() => {
 })
 const conflictIds = computed(() => {
   const conflicts = new Set()
-  const dayGroups = props.courses.reduce((groups, course) => {
+  const dayGroups = weekCourses.value.reduce((groups, course) => {
     (groups[course.weekday] ??= []).push(course)
     return groups
   }, {})
@@ -74,7 +92,7 @@ const conflictIds = computed(() => {
 const courseLayouts = computed(() => {
   const layouts = new Map()
   for (let weekday = 1; weekday <= 7; weekday += 1) {
-    const courses = props.courses
+    const courses = weekCourses.value
       .filter(course => course.weekday === weekday && conflictIds.value.has(course.id))
       .sort((first, second) => minutes(first.startTime) - minutes(second.startTime) || first.id - second.id)
     let component = []
@@ -104,10 +122,6 @@ const courseLayouts = computed(() => {
   return layouts
 })
 
-function dateKey(date) {
-  return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0')
-}
-
 function minutes(time) {
   const [hour, minute] = String(time || '00:00').split(':').map(Number)
   return hour * 60 + minute
@@ -136,6 +150,7 @@ function blockStyle(course) {
 function coursesFor(day) {
   return props.courses
     .filter(course => course.weekday === day.weekday)
+    .filter(course => courseActiveOnDate(course, props.semester, day.dateValue))
     .sort((first, second) => first.startTime.localeCompare(second.startTime))
 }
 
@@ -164,7 +179,12 @@ onUnmounted(() => window.clearInterval(timer))
         <span class="eyebrow">课程周视图</span>
         <h2>{{ weekRange }}</h2>
         <p class="quiet">
-          {{ todayCourses.length ? '今天 ' + todayCourses.length + ' 节课，最早 ' + todayCourses[0].startTime : '今天没有排课' }}
+          <strong class="week-term">{{ termLabel }}</strong>
+          <span> · </span>
+          <template v-if="weekOffset === 0">
+            {{ todayCourses.length ? '今天 ' + todayCourses.length + ' 节课，最早 ' + todayCourses[0].startTime : '今天没有排课' }}
+          </template>
+          <template v-else>本周 {{ weekCourses.length }} 节课</template>
           <span v-if="conflictIds.size"> · {{ conflictIds.size }} 节课时间冲突</span>
         </p>
       </div>
@@ -177,7 +197,13 @@ onUnmounted(() => window.clearInterval(timer))
     </header>
 
     <p v-if="conflictIds.size" class="schedule-warning">
-      有课程时间重叠，系统已标红。请调整上课时间，避免和同一时段的其他课程冲突。
+      当前周次内存在课程时间重叠，系统已标红并并排显示。单双周课程按学期周次错开后，不会误报冲突。
+    </p>
+    <p v-else-if="!weekMeta.configured" class="schedule-warning soft">
+      还没有设置学期起止日期，单双周暂不参与过滤。请先在“学期设置”中填写开始和结束日期。
+    </p>
+    <p v-else-if="weekMeta.before || weekMeta.after" class="schedule-warning soft">
+      这一周不在学期范围内，课程不会显示。你可以切换到学期内的周次查看。
     </p>
 
     <div class="week-scroll">
@@ -187,7 +213,7 @@ onUnmounted(() => window.clearInterval(timer))
           <div v-for="hour in hourRows" :key="hour" class="time-slot">{{ hour }}</div>
         </div>
         <div v-for="day in weekDays" :key="day.key" class="weekly-day"
-          :class="{ today: day.today, weekend: day.weekend }">
+          :class="{ today: day.today, weekend: day.weekend, outside: !day.inSemester }">
           <div class="day-head">
             <span>{{ day.label }}</span>
             <strong>{{ day.day }}</strong>
@@ -198,20 +224,26 @@ onUnmounted(() => window.clearInterval(timer))
             <i v-if="day.today && nowTop != null" class="now-line" :style="{ top: nowTop + 'px' }" aria-hidden="true"></i>
             <button v-for="course in coursesFor(day)" :key="course.id"
               class="course-block" :class="['tone-' + course.color, { conflict: conflictIds.has(course.id) }]"
-              :style="blockStyle(course)" :aria-label="course.name + '，' + courseTime(course)"
+              :style="blockStyle(course)"
+              :aria-label="course.name + '，' + courseTime(course) + '，' + weekPatternLabel(course.weekPattern)"
               @click="emit('edit', course)">
-              <strong>{{ course.name }}</strong>
+              <strong>
+                {{ course.name }}
+                <em v-if="course.weekPattern && course.weekPattern !== 'EVERY'" class="course-pattern">
+                  {{ weekPatternLabel(course.weekPattern) }}
+                </em>
+              </strong>
               <span>{{ courseTime(course) }}</span>
               <small v-if="course.location">{{ course.location }}</small>
             </button>
-            <p v-if="!coursesFor(day).length" class="day-empty">无课</p>
+            <p v-if="!coursesFor(day).length" class="day-empty">{{ day.inSemester ? '无课' : '学期外' }}</p>
           </div>
         </div>
       </div>
     </div>
 
     <footer class="timetable-foot">
-      <span class="quiet">点击课程可编辑或删除；课程只保存在当前账号，不影响其他学生。</span>
+      <span class="quiet">点击课程可编辑或删除；单双周按学期起始日期换算的周次生效，课程只保存在当前账号。</span>
       <button v-if="todayCourses.length" class="text-button" @click="emit('edit', todayCourses[0])">编辑今天第一节课</button>
     </footer>
   </section>
