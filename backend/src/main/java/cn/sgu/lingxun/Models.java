@@ -99,6 +99,11 @@ final class Models {
             affectedRoles = affectedRoles == null ? List.of() : List.copyOf(affectedRoles);
         }
     }
+    record Course(long id, String name, String teacher, String location, int weekday,
+                  String startTime, String endTime, String color, String note,
+                  LocalDateTime updatedAt) {}
+    record CourseInput(String name, String teacher, String location, Integer weekday,
+                       String startTime, String endTime, String color, String note) {}
     record Viewer(String username, String role) {}
     record Feedback(long id, long matterId, long versionId, String title, String message,
                     boolean handled, LocalDateTime createdAt) {}

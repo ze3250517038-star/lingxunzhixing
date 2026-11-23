@@ -29,11 +29,14 @@ class PortalController {
     private final SessionAccess access;
     private final NoticeWorkflow notices;
     private final NoticeImportService importer;
+    private final TimetableService timetableService;
 
-    PortalController(SessionAccess access, NoticeWorkflow notices, NoticeImportService importer) {
+    PortalController(SessionAccess access, NoticeWorkflow notices, NoticeImportService importer,
+                     TimetableService timetableService) {
         this.access = access;
         this.notices = notices;
         this.importer = importer;
+        this.timetableService = timetableService;
     }
 
     @GetMapping("/session")
@@ -103,6 +106,26 @@ class PortalController {
     TodoView changeStep(HttpServletRequest request, @PathVariable long id, @PathVariable String stepKey,
                         @RequestBody StepChange change) {
         return notices.updateStep(access.require(request, STUDENT, true).username(), id, stepKey, change.done());
+    }
+
+    @GetMapping("/timetable")
+    List<Course> timetable(HttpServletRequest request) {
+        return timetableService.list(access.require(request, STUDENT, false).username());
+    }
+
+    @PostMapping("/timetable")
+    Course createCourse(HttpServletRequest request, @RequestBody CourseInput input) {
+        return timetableService.create(access.require(request, STUDENT, true).username(), input);
+    }
+
+    @PutMapping("/timetable/{id}")
+    Course updateCourse(HttpServletRequest request, @PathVariable long id, @RequestBody CourseInput input) {
+        return timetableService.update(access.require(request, STUDENT, true).username(), id, input);
+    }
+
+    @DeleteMapping("/timetable/{id}")
+    void deleteCourse(HttpServletRequest request, @PathVariable long id) {
+        timetableService.delete(access.require(request, STUDENT, true).username(), id);
     }
 
     @PostMapping("/matters/{id}/feedback")

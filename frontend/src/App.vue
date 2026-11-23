@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { request, requestCalendar, requestForm, useSession } from './api.js'
 import NoticeDiff from './NoticeDiff.vue'
+import TimetableWeek from './TimetableWeek.vue'
 
 const session = ref(null)
 const page = ref('matters')
@@ -19,6 +20,18 @@ const todoFilter = ref('ALL')
 const todoWindow = ref('ALL')
 const todoQuery = ref('')
 const todoSort = ref('DUE')
+const timetable = ref([])
+const courseDialog = ref(null)
+const editingCourseId = ref(null)
+const courseColors = [
+  { key: 'sage', label: '青绿' },
+  { key: 'ocean', label: '海蓝' },
+  { key: 'amber', label: '暖黄' },
+  { key: 'rose', label: '砖红' },
+  { key: 'violet', label: '藤紫' },
+  { key: 'slate', label: '岩灰' }
+]
+const courseForm = ref(emptyCourse())
 const myFeedback = ref([])
 const calendarMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1, 12))
 const calendarSelectedDate = ref(formatDateKey(new Date()))
@@ -67,6 +80,7 @@ const correctionQuote = computed(() => correctionFragments.value.find(fragment =
 const correctionIsDate = computed(() => ['截止', '时间'].includes(correction.value?.slot?.type))
 const studentPages = [
   { key: 'overview', label: '首页', icon: '◎' },
+  { key: 'timetable', label: '我的课表', icon: '▤' },
   { key: 'matters', label: '事项查询', icon: '⌕' },
   { key: 'todos', label: '我的待办', icon: '✓' },
   { key: 'calendar', label: '截止日历', icon: '▦' },
@@ -82,6 +96,26 @@ const maintainerPages = [
 ]
 const navigation = computed(() => isReviewer.value ? maintainerPages : studentPages)
 const pageTitle = computed(() => navigation.value.find(item => item.key === page.value)?.label ?? '')
+const pageSubtitles = {
+  overview: '通知、课表和截止事项，一屏看清今天该做什么',
+  timetable: '按账号保存的个人课表，支持周视图和冲突提醒',
+  matters: '查已核验的校方通知，先看原文依据再订阅',
+  todos: '已确认的办理步骤和截止日期，集中处理',
+  calendar: '只显示当前有效截止，通知改期后自动复核',
+  reminders: '按距离截止的天数，提醒你优先处理',
+  subscriptions: '管理你关注的事项，不影响其他同学',
+  'my-feedback': '发现通知与原文不一致时，提交给维护者',
+  intake: '归档通知正文，生成可核验的候选字段',
+  versions: '逐字段核对证据，发布前必须通过门禁',
+  feedback: '处理学生反馈，必要时补录更正版本',
+  audit: '查看发布、修正、撤回和反馈处理记录'
+}
+const pageSubtitle = computed(() => pageSubtitles[page.value] ?? '岭讯知行校园办事工作台')
+const todayLabel = computed(() => {
+  const date = new Date()
+  return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日 · ' + weekdayLabel(date)
+})
+const todayWeekday = computed(() => new Date().getDay() || 7)
 const taskStates = { PENDING: '待办理', DONE: '已完成', REVIEW: '待复核', IGNORED: '不适用' }
 const taskOrder = { REVIEW: 0, PENDING: 1, DONE: 2, IGNORED: 3 }
 const todoFilters = ['ALL', 'REVIEW', 'PENDING', 'DONE', 'IGNORED']
@@ -134,6 +168,18 @@ const studentStats = computed(() => {
 })
 const studentReviewTodos = computed(() => todos.value.filter(task => task.state === 'REVIEW').slice(0, 3))
 const studentSubscribed = computed(() => matters.value.filter(item => item.subscribed))
+const todayCourses = computed(() => timetable.value
+  .filter(course => course.weekday === todayWeekday.value)
+  .sort((first, second) => first.startTime.localeCompare(second.startTime)))
+const todayDeadlines = computed(() => todos.value.filter(task =>
+  ['PENDING', 'REVIEW'].includes(task.state) && todoDueKey(task) === formatDateKey(new Date())))
+
+function emptyCourse(weekday = 0) {
+  return {
+    name: '', teacher: '', location: '', weekday: weekday || (new Date().getDay() || 7),
+    startTime: '08:00', endTime: '09:40', color: 'sage', note: ''
+  }
+}
 const todayFocus = computed(() => todos.value
   .filter(task => task.state === 'REVIEW'
     || (task.state === 'PENDING' && (dueDays(task) ?? 999) <= 3))
@@ -383,15 +429,21 @@ async function loadTodos() {
   todos.value = await request('/todos')
 }
 
+async function loadTimetable() {
+  timetable.value = await request('/timetable')
+}
+
 async function loadStudentHome() {
-  const [matterList, todoList, feedbackList] = await Promise.all([
+  const [matterList, todoList, feedbackList, courseList] = await Promise.all([
     request('/matters?q=' + encodeURIComponent(searchTerm.value)),
     request('/todos'),
-    request('/feedback/mine')
+    request('/feedback/mine'),
+    request('/timetable')
   ])
   matters.value = matterList
   todos.value = todoList
   myFeedback.value = feedbackList
+  timetable.value = courseList
   loadReminderDismissed()
   if (!matters.value.some(item => item.matter.id === selectedMatterId.value)) {
     selectMatter(matters.value[0]?.matter.id ?? null)
@@ -479,6 +531,7 @@ async function loadHistory(preferredId = null) {
 
 async function openPage(next) {
   if (next === 'overview') await loadStudentHome()
+  if (next === 'timetable') await loadTimetable()
   if (next === 'matters') {
     matterCategory.value = 'ALL'
     await loadMatters()
@@ -506,6 +559,60 @@ async function openPage(next) {
   if (next === 'feedback') feedback.value = await request('/maintenance/feedback')
   if (next === 'audit') events.value = await request('/maintenance/audit')
   page.value = next
+}
+
+async function openCourseEditor(course = null, weekday = 0) {
+  editingCourseId.value = course?.id ?? null
+  courseForm.value = course
+    ? {
+        name: course.name, teacher: course.teacher, location: course.location,
+        weekday: course.weekday, startTime: course.startTime, endTime: course.endTime,
+        color: course.color, note: course.note
+      }
+    : emptyCourse(weekday)
+  error.value = ''
+  await nextTick()
+  courseDialog.value?.showModal()
+}
+
+function closeCourseDialog() {
+  courseDialog.value?.close()
+  editingCourseId.value = null
+  courseForm.value = emptyCourse()
+}
+
+function saveCourse() {
+  const wasEditing = Boolean(editingCourseId.value)
+  return work(async () => {
+    const payload = { ...courseForm.value, weekday: Number(courseForm.value.weekday) }
+    const saved = wasEditing
+      ? await request('/timetable/' + editingCourseId.value, 'PUT', payload)
+      : await request('/timetable', 'POST', payload)
+    timetable.value = [...timetable.value.filter(course => course.id !== saved.id), saved]
+      .sort((first, second) => first.weekday - second.weekday
+        || first.startTime.localeCompare(second.startTime)
+        || first.name.localeCompare(second.name, 'zh-CN'))
+    closeCourseDialog()
+  }, wasEditing ? '课程已更新。' : '课程已加入课表。')
+}
+
+function removeCourse() {
+  if (!editingCourseId.value) return
+  if (!window.confirm('删除这门课程？删除后不会影响其他同学。')) return
+  return work(async () => {
+    const id = editingCourseId.value
+    await request('/timetable/' + id, 'DELETE')
+    timetable.value = timetable.value.filter(course => course.id !== id)
+    closeCourseDialog()
+  }, '课程已从课表删除。')
+}
+
+function courseDuration(course) {
+  const [startHour, startMinute] = course.startTime.split(':').map(Number)
+  const [endHour, endMinute] = course.endTime.split(':').map(Number)
+  const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute
+  if (minutes <= 0) return ''
+  return minutes % 60 === 0 ? minutes / 60 + ' 小时' : Math.floor(minutes / 60) + ' 小时 ' + minutes % 60 + ' 分'
 }
 
 async function login(role) {
@@ -806,7 +913,10 @@ onMounted(() => work(async () => {
 
   <div v-else class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">岭</span><span>岭讯知行</span></div>
+      <div>
+        <div class="brand"><span class="brand-mark">岭</span><span>岭讯知行</span></div>
+        <p class="side-caption">CAMPUS SIGNAL</p>
+      </div>
       <nav aria-label="主导航">
         <button v-for="item in navigation" :key="item.key" :aria-current="item.key === page ? 'page' : undefined"
           :disabled="busy" @click="work(() => openPage(item.key))">
@@ -815,7 +925,13 @@ onMounted(() => work(async () => {
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <span>{{ isReviewer ? '维护端' : '学生端' }}{{ session.demo ? ' · 本地演示' : '' }}</span>
+        <div class="sidebar-user">
+          <span class="avatar">{{ session.viewer.username.slice(0, 1).toUpperCase() }}</span>
+          <div>
+            <strong>{{ session.viewer.username }}</strong>
+            <small>{{ isReviewer ? '维护者' : '学生' }}{{ session.demo ? ' · 本地演示' : '' }}</small>
+          </div>
+        </div>
         <button v-if="session.demo" class="sidebar-action" :disabled="busy" @click="loginDemo(isReviewer ? 'student' : 'reviewer')">
           {{ isReviewer ? '切换到学生端' : '切换到维护端' }}
         </button>
@@ -825,11 +941,18 @@ onMounted(() => work(async () => {
 
     <main class="main">
       <header class="page-header">
-        <h1>{{ pageTitle }}</h1>
-        <form v-if="page === 'matters'" class="search" @submit.prevent="work(loadMatters)">
-          <input v-model="searchTerm" type="search" maxlength="100" aria-label="搜索事项" placeholder="搜事项名称或通知原文">
-          <button class="outline" :disabled="busy">搜索</button>
-        </form>
+        <div class="page-heading">
+          <span class="eyebrow">{{ isReviewer ? '维护工作台' : '学生工作台' }}</span>
+          <h1>{{ pageTitle }}</h1>
+          <p class="page-subtitle">{{ pageSubtitle }}</p>
+        </div>
+        <div class="page-meta">
+          <span class="date-chip">{{ todayLabel }}</span>
+          <form v-if="page === 'matters'" class="search" @submit.prevent="work(loadMatters)">
+            <input v-model="searchTerm" type="search" maxlength="100" aria-label="搜索事项" placeholder="搜事项名称或通知原文">
+            <button class="outline" :disabled="busy">搜索</button>
+          </form>
+        </div>
       </header>
       <p v-if="error" class="status error" role="alert">{{ error }}</p>
       <p v-if="message" class="status" role="status">{{ message }}</p>
@@ -867,6 +990,56 @@ onMounted(() => work(async () => {
             <small>通知已变更，等你确认</small>
           </button>
         </div>
+
+        <section class="today-board">
+          <article class="panel today-classes">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">TODAY · 课程</span>
+                <h3>今天上什么</h3>
+                <p class="quiet">{{ todayCourses.length ? '共 ' + todayCourses.length + ' 节课，点击可直接调整。' : '今天没有排课，适合集中处理待办。' }}</p>
+              </div>
+              <button class="text-button" :disabled="busy" @click="work(() => openPage('timetable'))">完整课表</button>
+            </div>
+            <div v-if="todayCourses.length" class="class-list">
+              <button v-for="course in todayCourses" :key="course.id" class="class-row"
+                :class="'tone-' + course.color" @click="openCourseEditor(course)">
+                <span class="class-time">{{ course.startTime }}</span>
+                <span class="class-copy">
+                  <strong>{{ course.name }}</strong>
+                  <small>{{ course.location || '地点待定' }}<template v-if="course.teacher"> · {{ course.teacher }}</template></small>
+                </span>
+                <span class="class-duration">{{ courseDuration(course) }}</span>
+              </button>
+            </div>
+            <div v-else class="empty-inline">
+              <p class="quiet">课表为空时，先添加今天的课程。</p>
+              <button class="outline" @click="openCourseEditor(null, todayWeekday)">+ 添加课程</button>
+            </div>
+          </article>
+
+          <article class="panel today-deadlines">
+            <div class="panel-head">
+              <div>
+                <span class="eyebrow">TODAY · 截止</span>
+                <h3>今天要交什么</h3>
+                <p class="quiet">{{ todayDeadlines.length ? '这些事项今天截止，优先处理。' : '今天没有待办理截止。' }}</p>
+              </div>
+              <button class="text-button" :disabled="busy" @click="work(() => openPage('calendar'))">看日历</button>
+            </div>
+            <div v-if="todayDeadlines.length" class="deadline-list">
+              <button v-for="task in todayDeadlines" :key="task.id" class="deadline-row"
+                :disabled="busy" @click="work(() => openTodoTask(task))">
+                <span>
+                  <strong>{{ task.title }}</strong>
+                  <small>{{ task.stage }}</small>
+                </span>
+                <span class="pill" :class="{ warn: task.state === 'REVIEW' }">{{ taskStates[task.state] }}</span>
+              </button>
+            </div>
+            <p v-else class="quiet today-empty">把今天的课和截止事项放在一起看，才不会到最后一刻才发现冲突。</p>
+          </article>
+        </section>
 
         <section v-if="todayFocus.length" class="panel focus-panel">
           <div class="panel-head">
@@ -938,6 +1111,27 @@ onMounted(() => work(async () => {
             </button>
           </div>
           <p v-else class="quiet">还没有订阅事项。订阅后，已核验的学生办理步骤会自动进入待办。</p>
+        </section>
+      </div>
+
+      <div v-else-if="page === 'timetable'" class="stack">
+        <section class="panel schedule-intro">
+          <div>
+            <span class="eyebrow">PERSONAL SCHEDULE</span>
+            <h2>把课表和截止事项放在同一张时间表上。</h2>
+            <p class="quiet">课程只保存在当前学生账号；时间冲突会标红。课表不参与通知核验，也不会改变任何待办日期。</p>
+          </div>
+          <div class="schedule-intro-meta">
+            <strong>{{ timetable.length }}</strong>
+            <span>门课程</span>
+            <button class="primary" @click="openCourseEditor(null, todayWeekday)">+ 添加课程</button>
+          </div>
+        </section>
+        <TimetableWeek :courses="timetable"
+          @add="openCourseEditor(null, $event)" @edit="openCourseEditor($event)" />
+        <section class="panel schedule-note">
+          <h3>怎么用</h3>
+          <p class="quiet">先录入每周固定课程；首页会显示“今天上什么”和“今天要交什么”。遇到通知改期，截止事项仍以待办里的证据核验结果为准。</p>
         </section>
       </div>
 
@@ -1408,6 +1602,52 @@ onMounted(() => work(async () => {
       </section>
     </main>
   </div>
+
+  <dialog ref="courseDialog" class="evidence-dialog course-dialog" @close="editingCourseId = null">
+    <form v-if="courseForm" class="form-stack" @submit.prevent="saveCourse">
+      <div class="panel-head">
+        <div>
+          <span class="eyebrow">{{ editingCourseId ? 'EDIT COURSE' : 'NEW COURSE' }}</span>
+          <h2>{{ editingCourseId ? '编辑课程' : '添加课程' }}</h2>
+        </div>
+        <button type="button" class="outline" :disabled="busy" @click="closeCourseDialog">取消</button>
+      </div>
+      <label>课程名称
+        <input v-model="courseForm.name" maxlength="120" required placeholder="例如：物联网导论">
+      </label>
+      <div class="form-row">
+        <label>星期
+          <select v-model.number="courseForm.weekday" required>
+            <option :value="1">周一</option><option :value="2">周二</option><option :value="3">周三</option>
+            <option :value="4">周四</option><option :value="5">周五</option><option :value="6">周六</option>
+            <option :value="7">周日</option>
+          </select>
+        </label>
+        <label>课程颜色
+          <div class="color-swatches" role="group" aria-label="课程颜色">
+            <button v-for="color in courseColors" :key="color.key" type="button" class="color-swatch"
+              :class="'tone-' + color.key" :aria-label="color.label" :aria-pressed="courseForm.color === color.key"
+              @click="courseForm.color = color.key"></button>
+          </div>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>上课时间<input v-model="courseForm.startTime" type="time" required></label>
+        <label>下课时间<input v-model="courseForm.endTime" type="time" required></label>
+      </div>
+      <div class="form-row">
+        <label>任课教师<input v-model="courseForm.teacher" maxlength="80" placeholder="选填"></label>
+        <label>上课地点<input v-model="courseForm.location" maxlength="100" placeholder="例如：信息楼 A203"></label>
+      </div>
+      <label>备注<input v-model="courseForm.note" maxlength="300" placeholder="选填，例如：单周上课、携带实验报告"></label>
+      <p v-if="error" class="status error" role="alert">{{ error }}</p>
+      <div class="footer-actions dialog-actions">
+        <button v-if="editingCourseId" type="button" class="text-button warn-text" :disabled="busy" @click="removeCourse">删除课程</button>
+        <span class="quiet">课程按当前账号保存，其他学生看不到。</span>
+        <button class="primary" :disabled="busy">保存课程</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog ref="correctionDialog" class="evidence-dialog" aria-labelledby="correction-title" @close="correction = null">
     <form v-if="correction" class="form-stack" @submit.prevent="saveCorrection">
