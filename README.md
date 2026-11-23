@@ -108,6 +108,7 @@ mvn -f backend/pom.xml -Dtest=EvaluationRunnerTest test
 - `docs/阶段一-技术审计与升级实施方案.md`：审计基线和升级方案。
 - `docs/阶段二-闭环与变更验证记录.md`：本轮的实现、实测命令和结果。
 - `docs/课程表-学期与单双周.md`：学期设置、周次计算、单双周规则、10 个 GitHub 参考项目和当前边界。
+- `docs/UI与按钮体验-20个GitHub参考.md`：按钮状态机、弹窗与反馈规则、20 个 GitHub 参考项目及未采用项。
 - `docs/datasets/lingxun-simulated-reference-v1.json`：10 条模拟参考通知。
 - `docs/evaluation/summary.csv`：三种请求模式的真实运行摘要。
 

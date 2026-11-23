@@ -987,3 +987,330 @@ input:not([type=checkbox]):focus, textarea:focus, select:focus {
   .class-row .class-time { grid-column: 1; grid-row: 1; }
   .class-row .class-copy { grid-column: 2; grid-row: 1; }
 }
+
+/* Interaction system: shared button, focus, loading and notice states */
+:root {
+  --focus: #0f8f7c;
+  --button-radius: 12px;
+}
+
+button,
+.matter-card,
+.class-row,
+.deadline-row,
+.course-block {
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color .16s ease,
+    border-color .16s ease,
+    box-shadow .16s ease,
+    color .16s ease,
+    transform .12s ease,
+    opacity .16s ease;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(15, 143, 124, .16);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(.992);
+}
+
+.primary,
+.outline,
+.text-button {
+  min-height: 2.55rem;
+  border-radius: var(--button-radius);
+  font-weight: 680;
+}
+
+.primary,
+.outline {
+  padding: .58rem .9rem;
+}
+
+.primary {
+  border-color: #0f5a49;
+  background: linear-gradient(180deg, #21806a, #12604f);
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(18, 96, 79, .18);
+}
+
+.primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #258f76, #12604f);
+  box-shadow: 0 12px 28px rgba(18, 96, 79, .26);
+  transform: translateY(-1px);
+}
+
+.primary:active:not(:disabled) {
+  background: #0e5647;
+  box-shadow: 0 3px 10px rgba(18, 96, 79, .18);
+  transform: translateY(1px);
+}
+
+.outline:hover:not(:disabled) {
+  border-color: #8bb9a6;
+  background: #f4fbf7;
+  color: #145846;
+}
+
+.outline:active:not(:disabled) {
+  background: #e9f5ee;
+}
+
+.text-button {
+  min-height: 2.2rem;
+  padding: .4rem .5rem;
+  border: 1px solid transparent;
+  color: var(--accent);
+}
+
+.text-button:hover:not(:disabled) {
+  border-color: #c9e3d6;
+  background: #f3faf6;
+}
+
+.warn-text:hover:not(:disabled) {
+  border-color: #efd0c6;
+  background: #fff5f1;
+  color: #7d2c26;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  filter: saturate(.78);
+  transform: none;
+  box-shadow: none;
+}
+
+button[aria-busy="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  cursor: progress;
+}
+
+button[aria-busy="true"]::before {
+  content: "";
+  width: .8rem;
+  height: .8rem;
+  flex: 0 0 auto;
+  border: 2px solid rgba(25, 45, 44, .2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: button-spin .7s linear infinite;
+}
+
+.primary[aria-busy="true"]::before {
+  border-color: rgba(255, 255, 255, .38);
+  border-top-color: #fff;
+}
+
+@keyframes button-spin {
+  to { transform: rotate(360deg); }
+}
+
+.notice-stack {
+  display: grid;
+  gap: .5rem;
+  margin-bottom: .8rem;
+}
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  margin: 0;
+  padding: .66rem .8rem;
+  border: 1px solid #c6e1d3;
+  border-left: 4px solid #278260;
+  border-radius: 10px;
+  background: #eef9f2;
+  color: #164b3b;
+  box-shadow: 0 4px 14px rgba(31, 78, 62, .06);
+}
+
+.status::before {
+  content: "✓";
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: #2b8462;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+  line-height: 1;
+  margin-top: .06rem;
+}
+
+.status.error {
+  border-color: #efc9c1;
+  border-left-color: #a73c30;
+  background: #fff3f0;
+  color: #7d2c26;
+}
+
+.status.error::before {
+  content: "!";
+  background: #a73c30;
+}
+
+.status-close {
+  flex: 0 0 auto;
+  min-width: 2rem;
+  min-height: 2rem;
+  margin: -.2rem -.2rem -.2rem auto;
+  padding: .1rem .35rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: currentColor;
+  font-size: .95rem;
+  line-height: 1;
+}
+
+.status-close:hover:not(:disabled) {
+  background: rgba(25, 45, 44, .08);
+}
+
+.day-head .day-add {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-grid;
+  place-items: center;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+}
+
+.day-head .day-add:hover {
+  border-color: #8fc2ac;
+  background: #fff;
+}
+
+.day-head .day-add:active {
+  transform: scale(.94);
+}
+
+.color-swatch {
+  min-width: 1.8rem;
+  min-height: 1.8rem;
+  width: 1.8rem;
+  height: 1.8rem;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+
+.color-swatch:hover {
+  transform: translateY(-1px) scale(1.04);
+}
+
+.color-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px #257b64;
+}
+
+.course-block:active {
+  transform: scale(.995);
+}
+
+.stat-card:active,
+.matter-card:active {
+  transform: translateY(1px) scale(.995);
+}
+
+@media (max-width: 860px) {
+  .primary,
+  .outline {
+    min-height: 2.75rem;
+  }
+
+  .text-button {
+    min-height: 2.75rem;
+  }
+
+  .status-close {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .sidebar nav button,
+  .sidebar-action {
+    min-height: 2.75rem;
+  }
+
+  .day-head .day-add {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .status {
+    font-size: .86rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button,
+  .matter-card,
+  .class-row,
+  .deadline-row,
+  .course-block,
+  .color-swatch {
+    transition: none !important;
+  }
+
+  button[aria-busy="true"]::before {
+    animation-duration: 1.8s;
+  }
+}
+
+
+/* Dialog ergonomics: keep actions reachable, eliminate horizontal overflow */
+.course-dialog,
+.semester-dialog,
+.evidence-dialog {
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.course-meta-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.course-meta-row > label:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.color-swatches {
+  flex-wrap: wrap;
+  row-gap: .45rem;
+}
+
+.dialog-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex-wrap: wrap;
+  gap: .65rem;
+  margin-top: .1rem;
+  padding-block: .75rem;
+  background: #fff;
+  border-top: 1px solid var(--edge);
+  box-shadow: 0 -12px 18px -18px rgba(20, 52, 45, .45);
+}
+
+.dialog-actions .quiet {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+@media (max-width: 590px) {
+  .course-meta-row { grid-template-columns: minmax(0, 1fr); }
+  .course-meta-row > label:nth-child(3) { grid-column: auto; }
+  .course-dialog, .semester-dialog { max-height: calc(100dvh - 1rem); }
+}

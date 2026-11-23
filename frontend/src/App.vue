@@ -8,6 +8,7 @@ import { courseActiveOnDate, semesterRange, weekPatternLabel } from './timetable
 const session = ref(null)
 const page = ref('matters')
 const busy = ref(false)
+const busyAction = ref('')
 const error = ref('')
 const message = ref('')
 const credentials = ref({ username: '', password: '' })
@@ -414,9 +415,10 @@ function previousValue(field) {
   return previous ? publishedValue(previous) : '—'
 }
 
-async function work(fn, success = '') {
+async function work(fn, success = '', action = '') {
   if (busy.value) return
   busy.value = true
+  busyAction.value = action
   error.value = ''
   message.value = ''
   try {
@@ -426,6 +428,7 @@ async function work(fn, success = '') {
     error.value = failure.message
   } finally {
     busy.value = false
+    busyAction.value = ''
   }
 }
 
@@ -611,7 +614,7 @@ function saveCourse() {
         || first.startTime.localeCompare(second.startTime)
         || first.name.localeCompare(second.name, 'zh-CN'))
     closeCourseDialog()
-  }, wasEditing ? '课程已更新。' : '课程已加入课表。')
+  }, wasEditing ? '课程已更新。' : '课程已加入课表。', 'course-save')
 }
 
 function removeCourse() {
@@ -622,7 +625,7 @@ function removeCourse() {
     await request('/timetable/' + id, 'DELETE')
     timetable.value = timetable.value.filter(course => course.id !== id)
     closeCourseDialog()
-  }, '课程已从课表删除。')
+  }, '课程已从课表删除。', 'course-delete')
 }
 
 async function openSemesterEditor() {
@@ -647,7 +650,7 @@ function saveSemester() {
   return work(async () => {
     semester.value = await request('/timetable/semester', 'PUT', { ...semesterForm.value })
     closeSemesterDialog()
-  }, '学期起止已保存，单双周将按周次重新过滤。')
+  }, '学期起止已保存，单双周将按周次重新过滤。', 'semester-save')
 }
 
 function courseDuration(course) {
@@ -667,11 +670,11 @@ async function login(role) {
 }
 
 function loginDemo(role) {
-  return work(() => login(role))
+  return work(() => login(role), '', 'login')
 }
 
 function loginForm() {
-  return work(() => login())
+  return work(() => login(), '', 'login')
 }
 
 function logout() {
@@ -777,7 +780,7 @@ function sendFeedback() {
     })
     showFeedback.value = false
     feedbackText.value = ''
-  }, '已提交给维护者核查。')
+  }, '已提交给维护者核查。', 'feedback')
 }
 
 function showEvidence(field, choice = fieldChoice(field)) {
@@ -893,7 +896,7 @@ function saveCorrection() {
       start: selected ? selectionStart : 0, end: selected ? selectionEnd : correctionQuote.value.length
     }))
     correctionDialog.value.close()
-  }, '已保存字段和原文依据，可在审核记录查看修正说明。')
+  }, '已保存字段和原文依据，可在审核记录查看修正说明。', 'correction-save')
 }
 
 function publishVersion() {
@@ -949,7 +952,7 @@ onMounted(() => work(async () => {
       <form v-else class="form-stack" @submit.prevent="loginForm">
         <label>账号<input v-model="credentials.username" autocomplete="username" required></label>
         <label>密码<input v-model="credentials.password" type="password" autocomplete="current-password" required></label>
-        <button class="primary" :disabled="busy || !session">登录</button>
+        <button class="primary" :disabled="busy || !session" :aria-busy="busyAction === 'login'">{{ busyAction === 'login' ? '登录中…' : '登录' }}</button>
       </form>
     </section>
   </main>
@@ -991,14 +994,22 @@ onMounted(() => work(async () => {
         </div>
         <div class="page-meta">
           <span class="date-chip">{{ todayLabel }}</span>
-          <form v-if="page === 'matters'" class="search" @submit.prevent="work(loadMatters)">
+          <form v-if="page === 'matters'" class="search" @submit.prevent="work(loadMatters, '', 'search')">
             <input v-model="searchTerm" type="search" maxlength="100" aria-label="搜索事项" placeholder="搜事项名称或通知原文">
-            <button class="outline" :disabled="busy">搜索</button>
+            <button class="outline" :disabled="busy" :aria-busy="busyAction === 'search'">{{ busyAction === 'search' ? '搜索中…' : '搜索' }}</button>
           </form>
         </div>
       </header>
-      <p v-if="error" class="status error" role="alert">{{ error }}</p>
-      <p v-if="message" class="status" role="status">{{ message }}</p>
+      <div v-if="error || message" class="notice-stack" aria-live="polite" aria-atomic="true">
+        <p v-if="error" class="status error" role="alert">
+          {{ error }}
+          <button type="button" class="status-close" aria-label="关闭错误提示" @click="error = ''">×</button>
+        </p>
+        <p v-if="message" class="status" role="status">
+          {{ message }}
+          <button type="button" class="status-close" aria-label="关闭提示" @click="message = ''">×</button>
+        </p>
+      </div>
 
       <div v-if="page === 'overview'" class="stack">
         <section class="panel student-hero">
@@ -1243,7 +1254,7 @@ onMounted(() => work(async () => {
             <label>哪项信息需要核查？
               <textarea v-model="feedbackText" rows="3" maxlength="600" required placeholder="例如，报名截止字段与最新通知不一致。"></textarea>
             </label>
-            <button class="primary" :disabled="busy">提交反馈</button>
+            <button class="primary" :disabled="busy" :aria-busy="busyAction === 'feedback'">{{ busyAction === 'feedback' ? '提交中…' : '提交反馈' }}</button>
           </form>
         </section>
       </div>
@@ -1652,12 +1663,12 @@ onMounted(() => work(async () => {
     </main>
   </div>
 
-  <dialog ref="courseDialog" class="evidence-dialog course-dialog" @close="editingCourseId = null">
+  <dialog ref="courseDialog" class="evidence-dialog course-dialog" aria-labelledby="course-dialog-title" @close="editingCourseId = null">
     <form v-if="courseForm" class="form-stack" @submit.prevent="saveCourse">
       <div class="panel-head">
         <div>
           <span class="eyebrow">{{ editingCourseId ? 'EDIT COURSE' : 'NEW COURSE' }}</span>
-          <h2>{{ editingCourseId ? '编辑课程' : '添加课程' }}</h2>
+          <h2 id="course-dialog-title">{{ editingCourseId ? '编辑课程' : '添加课程' }}</h2>
         </div>
         <button type="button" class="outline" :disabled="busy" @click="closeCourseDialog">取消</button>
       </div>
@@ -1698,19 +1709,19 @@ onMounted(() => work(async () => {
       <label>备注<input v-model="courseForm.note" maxlength="300" placeholder="选填，例如：单周上课、携带实验报告"></label>
       <p v-if="error" class="status error" role="alert">{{ error }}</p>
       <div class="footer-actions dialog-actions">
-        <button v-if="editingCourseId" type="button" class="text-button warn-text" :disabled="busy" @click="removeCourse">删除课程</button>
+        <button v-if="editingCourseId" type="button" class="text-button warn-text" :disabled="busy" :aria-busy="busyAction === 'course-delete'" @click="removeCourse">{{ busyAction === 'course-delete' ? '删除中…' : '删除课程' }}</button>
         <span class="quiet">课程按当前账号保存，其他学生看不到。</span>
-        <button class="primary" :disabled="busy">保存课程</button>
+        <button class="primary" :disabled="busy" :aria-busy="busyAction === 'course-save'">{{ busyAction === 'course-save' ? '保存中…' : '保存课程' }}</button>
       </div>
     </form>
   </dialog>
 
-  <dialog ref="semesterDialog" class="evidence-dialog semester-dialog" @close="semesterForm = emptySemester()">
+  <dialog ref="semesterDialog" class="evidence-dialog semester-dialog" aria-labelledby="semester-dialog-title" @close="semesterForm = emptySemester()">
     <form v-if="semesterForm" class="form-stack" @submit.prevent="saveSemester">
       <div class="panel-head">
         <div>
           <span class="eyebrow">SEMESTER SETUP</span>
-          <h2>学期设置</h2>
+          <h2 id="semester-dialog-title">学期设置</h2>
         </div>
         <button type="button" class="outline" :disabled="busy" @click="closeSemesterDialog">取消</button>
       </div>
@@ -1725,7 +1736,7 @@ onMounted(() => work(async () => {
       <p v-if="error" class="status error" role="alert">{{ error }}</p>
       <div class="footer-actions dialog-actions">
         <span class="quiet">学期设置只影响当前学生账号。</span>
-        <button class="primary" :disabled="busy">保存学期</button>
+        <button class="primary" :disabled="busy" :aria-busy="busyAction === 'semester-save'">{{ busyAction === 'semester-save' ? '保存中…' : '保存学期' }}</button>
       </div>
     </form>
   </dialog>
@@ -1770,7 +1781,7 @@ onMounted(() => work(async () => {
       <label>核验说明<textarea v-model="correction.reason" rows="2" maxlength="300" required
         placeholder="说明为什么采用这个字段值"></textarea></label>
       <p v-if="error" class="status error" role="alert">{{ error }}</p>
-      <button class="primary" :disabled="busy">保存并核验</button>
+      <button class="primary" :disabled="busy" :aria-busy="busyAction === 'correction-save'">{{ busyAction === 'correction-save' ? '保存中…' : '保存并核验' }}</button>
     </form>
   </dialog>
 
